@@ -1,0 +1,7 @@
+/* 
+ * Author: coperd <lhcwhu@gmail.com>
+ * 2014-04-01
+ */
+
+vm_monitor.c: program based on libvirt API to monitor the resource usage
+of VMs and host(cpu, memory, disk and network)
