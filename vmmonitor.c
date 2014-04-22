@@ -86,6 +86,28 @@ typedef struct mach_load {
     double tx_load;  /* Kbps */
 }mach_load;
 
+/* VM scheduling infomation */
+typedef struct vm_schedinfo {
+    int cpu_shares;
+    long long vcpu_period;
+    long long vcpu_quota;
+    long long emulator_period;
+    long long emulator_quota;
+}vm_schedinfo;
+
+/* VM blkio information */
+typedef struct vm_blkiotune {
+    int weight;
+    int device weight;
+}vm_blkiotune;
+
+/* used for VM resource scheduling */
+typedef struct vm_resource {
+    vm_schedinfo cpu_sched;
+    blkiotune blkio_resource;
+    /* many more resources can be added here */
+}
+
 /*
  * must be called before using struct vm_info
  */
@@ -500,6 +522,80 @@ void calculate_phy_load(struct mach_load *phyload, struct phy_statistics *phy_st
     phyload->tx_load = delta_tx_bytes * 1.0 / 1024 / microsec * 1000000; /* in Kbps */
 }
 
+/* 
+ * get the scheduling information of "domain" and store it to "params"
+ * Attention: before calling this function, what you need to do is just
+ * to define the "params" and "nparams" variable(better define 
+ * params = NULL, nparams = 0), DO NOT try to allocate any
+ * memory for them as this function will do that for you.
+ * return 0 in case of success and -1 in case of error
+ */
+int get_schedinfo(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
+{
+    char *retc = virDomainGetSchedulerType(domain, *nparams);
+    if ((NULL == retc) || (0 == *nparams)) {
+        fprintf(stderr, "get domain scheduler type failed...");
+        return -1;
+    }
+    *params = (virTypedParameterPtr)malloc(sizeof(**params) * (*nparams));
+    memset(*params, 0, sizeof(**params) * nparams);
+    if (-1 == virDomainGetSchedulerParametersFlags(domain, params, &nparams, 0)) {
+        fprintf(stderr, "get domain scheduler parameters failed...");
+        return -1;
+    }
+
+    return 0;
+}
+
+void print_typed_parameters(virTypedParameterPtr params, int nparams)
+{
+    int i;
+    for (i = 0; i < nparams; i++)
+        printf("%-15s: %lld\n", params[i].field, params[i].value.l);
+}
+
+/* 
+ * change params[cpu_shares].value.l to new_cpu_shares
+ * return 0 in case of success and -1 in case of error
+ */
+int set_cpu_shares(virTypedParameterPtr params, int nparams, int new_cpu_shares)
+{
+    /*
+     * Firstly, find out the element of cpu_shares from the virTypedParameter struct
+     * and then do the change
+     */ 
+    int i;
+    for (i = 0; i < nparams; i++) {
+        if (0 == strcmp("cpu_shares", params[i].field)) {
+            params[i].value.l = new_cpu_shares;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+/* 
+ * set the scheduler parameters of domain to "params", remember that params is the new
+ * scheduler parameters now, you should set it to the appropriate value before calling 
+ * this function.
+ */
+void set_schedinfo(virDomainPtr domain, virTypedParameterPtr params, int nparams, int new_cpu_shares)
+{
+    get_scheduler(domain, &params, &nparams);
+    set_cpu_shares(params, nparams, new_cpu_shares);
+    /* 
+     * flags:0 represents that the setting is only effective for the current state 
+     */
+    virDomainSetSchedulerParameterFlags(domain, params, nparams, 0);
+    /* 
+     * you can print the schedinfo here, or you will have to recall 
+     * the virDomainGetSchedulerParameter() function to get the params 
+     * and then print its value. 
+     */
+    //print_typed_parameters(params, nparams);
+    free(params);
+}
+
 int main(int argc, char **argv)
 {
     virConnectPtr conn = NULL;
@@ -528,8 +624,10 @@ int main(int argc, char **argv)
     /* store all VM information obtained to struct vm_info */
     struct vm_info *vminfo = (struct vm_info *)malloc(sizeof(struct vm_info) * active_domain_num);
     struct phy_info *phyinfo = (struct phy_info *)malloc(sizeof(struct phy_info) * 1);
+
     init_phy_info(phyinfo);
     create_phy_rst_file(phyinfo);
+
     for (i = 0; i < active_domain_num; i++) {
 
         init_vm_info(&vminfo[i]);
