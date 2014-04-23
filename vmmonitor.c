@@ -6,6 +6,7 @@
 #include <libvirt/virterror.h>  /* libvirt error handling */
 #include <sys/time.h>           /* gettimeofday() */
 #include <sys/types.h>          /* time_t etc. */
+#include <stdbool.h>
 #include <unistd.h>
 #include <time.h>               /* time() */
 #include <string.h>
@@ -98,15 +99,15 @@ typedef struct vm_schedinfo {
 /* VM blkio information */
 typedef struct vm_blkiotune {
     int weight;
-    int device weight;
+    int device_weight;
 }vm_blkiotune;
 
 /* used for VM resource scheduling */
 typedef struct vm_resource {
     vm_schedinfo cpu_sched;
-    blkiotune blkio_resource;
+    vm_blkiotune blkio_resource;
     /* many more resources can be added here */
-}
+}vm_resource;
 
 /*
  * must be called before using struct vm_info
@@ -392,7 +393,7 @@ void get_phy_cpu_stat(struct phy_statistics *phy_stat)
         fprintf(stderr, "faild to open /proc/stat [%s]\n", strerror(errno));
         exit(errno);
     }
-    fscanf(fp, "%*s %ld %ld %ld %ld %ld %ld %ld %ld %ld %ld\n", &phy_stat->user, &phy_stat->nice, &phy_stat->system,
+    fscanf(fp, "%*s %ld %ld %ld %ld %ld %ld %ld %ld %ld /*%ld*/\n", &phy_stat->user, &phy_stat->nice, &phy_stat->system,
         &phy_stat->idle, &phy_stat->iowait, &phy_stat->irq, &phy_stat->softirq, &phy_stat->steal, &phy_stat->guest/*,
         &phy_stat->guest_nice*/);
 
@@ -532,14 +533,13 @@ void calculate_phy_load(struct mach_load *phyload, struct phy_statistics *phy_st
  */
 int get_schedinfo(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
 {
-    char *retc = virDomainGetSchedulerType(domain, *nparams);
+    char *retc = virDomainGetSchedulerType(domain, nparams);
     if ((NULL == retc) || (0 == *nparams)) {
         fprintf(stderr, "get domain scheduler type failed...");
         return -1;
     }
     *params = (virTypedParameterPtr)malloc(sizeof(**params) * (*nparams));
-    memset(*params, 0, sizeof(**params) * nparams);
-    if (-1 == virDomainGetSchedulerParametersFlags(domain, params, &nparams, 0)) {
+    if (-1 == virDomainGetSchedulerParametersFlags(domain, *params, nparams, 0)) {
         fprintf(stderr, "get domain scheduler parameters failed...");
         return -1;
     }
@@ -547,18 +547,55 @@ int get_schedinfo(virDomainPtr domain, virTypedParameterPtr *params, int *nparam
     return 0;
 }
 
-void print_typed_parameters(virTypedParameterPtr params, int nparams)
+/*
+ * print the typed parameter value
+ */
+void print_typed_parameters(virTypedParameterPtr item, int nparams)
 {
     int i;
-    for (i = 0; i < nparams; i++)
-        printf("%-15s: %lld\n", params[i].field, params[i].value.l);
+    for (i = 0; i < nparams; i++) {
+        switch (item[i].type) {
+            case VIR_TYPED_PARAM_INT:
+                printf("%-15s : %d\n", item[i].field, item[i].value.i);
+                break;
+
+            case VIR_TYPED_PARAM_UINT:
+                printf("%-15s : %u\n", item[i].field, item[i].value.ui);
+                break;
+
+            case VIR_TYPED_PARAM_LLONG:
+                printf("%-15s : %lld\n", item[i].field, item[i].value.l);
+                break;
+
+            case VIR_TYPED_PARAM_ULLONG:
+                printf("%-15s : %llu\n", item[i].field, item[i].value.ul);
+                break;
+
+            case VIR_TYPED_PARAM_DOUBLE:
+                printf("%-15s : %f\n", item[i].field, item[i].value.d);
+                break;
+
+            case VIR_TYPED_PARAM_BOOLEAN:
+                printf("%-15s : %d\n", item[i].field, item[i].value.b ? 1 : 0);
+                break;
+
+            case VIR_TYPED_PARAM_STRING:
+                printf("%-15s : %s\n", item[i].field, item[i].value.s);
+                break;
+
+            default:
+                printf("unimplemented parameter type %d", item[i].type);
+        }
+    }
 }
 
-/* 
- * change params[cpu_shares].value.l to new_cpu_shares
+/*
+ * TODO: params.value is a union, how should the new_value be set to the approriate data type ?
+ * change params[field].value to new_value, this function is currently used to modify cpu_shares
+ * and blkio.weight, so "int" type is enough for new_value.
  * return 0 in case of success and -1 in case of error
  */
-int set_cpu_shares(virTypedParameterPtr params, int nparams, int new_cpu_shares)
+int set_params_value(virTypedParameterPtr params, int nparams, const char *field, int new_value)
 {
     /*
      * Firstly, find out the element of cpu_shares from the virTypedParameter struct
@@ -566,8 +603,36 @@ int set_cpu_shares(virTypedParameterPtr params, int nparams, int new_cpu_shares)
      */ 
     int i;
     for (i = 0; i < nparams; i++) {
-        if (0 == strcmp("cpu_shares", params[i].field)) {
-            params[i].value.l = new_cpu_shares;
+        if (0 == strcmp(field, params[i].field)) {
+            switch (params[i].type) {
+                case VIR_TYPED_PARAM_INT:
+                    params[i].value.i = (int)new_value;
+                    break;
+
+                case VIR_TYPED_PARAM_UINT:
+                    params[i].value.ui = (unsigned int)new_value;
+                    break;
+
+                case VIR_TYPED_PARAM_LLONG:
+                    params[i].value.l = (long long)new_value;
+                    break;
+
+                case VIR_TYPED_PARAM_ULLONG:
+                    params[i].value.ul = (unsigned long long)new_value;
+                    break;
+
+                case VIR_TYPED_PARAM_DOUBLE:
+                    params[i].value.d = (double)new_value;
+                    break;
+
+                case VIR_TYPED_PARAM_BOOLEAN:
+                    params[i].value.b = (bool)new_value;
+                    break;
+
+                default :
+                    printf("Type %d not supported now\n", params[i].type);
+                    return -1;
+            }
             return 0;
         }
     }
@@ -581,12 +646,12 @@ int set_cpu_shares(virTypedParameterPtr params, int nparams, int new_cpu_shares)
  */
 void set_schedinfo(virDomainPtr domain, virTypedParameterPtr params, int nparams, int new_cpu_shares)
 {
-    get_scheduler(domain, &params, &nparams);
-    set_cpu_shares(params, nparams, new_cpu_shares);
+    get_schedinfo(domain, &params, &nparams);
+    set_params_value(params, nparams, "cpu.shares", new_cpu_shares);
     /* 
      * flags:0 represents that the setting is only effective for the current state 
      */
-    virDomainSetSchedulerParameterFlags(domain, params, nparams, 0);
+    virDomainSetSchedulerParametersFlags(domain, params, nparams, 0);
     /* 
      * you can print the schedinfo here, or you will have to recall 
      * the virDomainGetSchedulerParameter() function to get the params 
