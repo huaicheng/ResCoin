@@ -51,12 +51,12 @@ void print_typed_parameters(virTypedParameterPtr domain, int nparams)
 }
 
 /* 
- * get the scheduling information of "domain" and store it to "params"
+ * Get the scheduling information of "domain" and store it to "params"
  * Attention: before calling this function, what you need to do is just
  * to define the "params" and "nparams" variable(better define 
  * params = NULL, nparams = 0), DO NOT try to allocate any
  * memory for them as this function will do that for you.
- * return 0 in case of success and -1 in case of error
+ * @Return 0 in case of success and -1 in case of error
  */
 int get_schedinfo(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
 {
@@ -74,10 +74,19 @@ int get_schedinfo(virDomainPtr domain, virTypedParameterPtr *params, int *nparam
     return 0;
 }
 
+/* 
+ * Get blkio parameter of the given domain, it automatically allocate space
+ * for params parameter so there is no need for you to initialize the variable
+ * of "params" and "nparams". This function will decide the correct value for
+ * them.
+ * @Return 0 in case of success and -1 in case of error
+ */
 int get_blkio(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
 {
+    /* first time to call virDomainGetBlkioParameters() to set the nparams variable */
     virDomainGetBlkioParameters(domain, *params, nparams, 0);
     *params = (virTypedParameterPtr)malloc(sizeof(**params) * (*nparams));
+    /* call virDomainGetBlkioParameters() again to fill information to the params struct */
     if (-1 == virDomainGetBlkioParameters(domain, *params, nparams, 0)) {
         fprintf(stderr, "get domain blkio parameters failed...\n");
         return -1;
@@ -175,7 +184,7 @@ int set_cpu_shares(virDomainPtr domain, virTypedParameterPtr params, int nparams
  * set the blkio parameters of "weight" to the specific value
  * return 0 in case of success and -1 in case of error
  */
-int set_blkio_weight(virDomainPtr domain, virTypedParameterPtr params, int *nparams, int new_weight)
+int set_blkio(virDomainPtr domain, virTypedParameterPtr params, int *nparams, int new_weight)
 {
     get_blkio(domain, &params, nparams);
     /* set weight to new_weight */
@@ -184,4 +193,12 @@ int set_blkio_weight(virDomainPtr domain, virTypedParameterPtr params, int *npar
     virDomainSetBlkioParameters(domain, params, *nparams, 0);
     print_typed_parameters(params, *nparams);
 
+}
+
+/* 
+ * wrapper for set_blkio() function
+ */
+int set_blkio_weight(virDomainPtr domain, virTypedParameterPtr params, int *nparams, int new_weight)
+{
+    return set_blkio(domain, params, nparams, new_weight);
 }

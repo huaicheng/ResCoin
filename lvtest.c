@@ -7,7 +7,7 @@
 #include <libvirt/virterror.h>
 #include <libvirt/libvirt-qemu.h>
 
-#include "rescon.h"
+#include "rc.h"
 
 int main(int argc, char **argv)
 {
