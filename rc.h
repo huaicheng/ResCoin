@@ -36,9 +36,11 @@ int set_params_value(virTypedParameterPtr params, int nparams, const char *field
 
 int set_schedinfo(virDomainPtr domain, virTypedParameterPtr params, int nparams, int new_cpu_shares);
 
+int set_cpu_shares(virDomainPtr domain, virTypedParameterPtr params, int nparams, int new_cpu_shares);
 
+int set_blkio(virDomainPtr domain, virTypedParameterPtr params, int *nparams, int new_weight)
 
-
+int set_blkio_weight(virDomainPtr domain, virTypedParameterPtr params, int *nparams, int new_weight)
 
 
 #endif
