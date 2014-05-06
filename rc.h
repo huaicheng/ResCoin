@@ -1,5 +1,5 @@
-#ifndef _RESCON_H_
-#define _RESCON_H_
+#ifndef _RC_H_
+#define _RC_H_
 
 #include <libvirt/libvirt.h>
 #include <libvirt/libvirt-qemu.h>
@@ -34,13 +34,13 @@ void print_typed_parameters(virTypedParameterPtr domain, int nparams);
 
 int set_params_value(virTypedParameterPtr params, int nparams, const char *field, int new_value);
 
-int set_schedinfo(virDomainPtr domain, virTypedParameterPtr params, int nparams, int new_cpu_shares);
+int set_schedinfo(virDomainPtr domain, int new_cpu_shares);
 
-int set_cpu_shares(virDomainPtr domain, virTypedParameterPtr params, int nparams, int new_cpu_shares);
+int set_cpu_shares(virDomainPtr domain, int new_cpu_shares);
 
-int set_blkio(virDomainPtr domain, virTypedParameterPtr params, int *nparams, int new_weight);
+int set_blkio(virDomainPtr domain, int new_weight);
 
-int set_blkio_weight(virDomainPtr domain, virTypedParameterPtr params, int *nparams, int new_weight);
+int set_blkio_weight(virDomainPtr domain, int new_weight);
 
 
 #endif

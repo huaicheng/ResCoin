@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "rescon.h"
+#include "rc.h"
 
 /*
  * print the typed parameter value
@@ -151,8 +151,11 @@ int set_params_value(virTypedParameterPtr params, int nparams, const char *field
  * this function.
  * return 0 in case of success, and -1 in case of error
  */
-int set_schedinfo(virDomainPtr domain, virTypedParameterPtr params, int nparams, int new_cpu_shares)
+int set_schedinfo(virDomainPtr domain, int new_cpu_shares)
 {
+    virTypedParameterPtr params = NULL;
+    int nparams = 0;
+
     get_schedinfo(domain, &params, &nparams);
     if (0 == set_params_value(params, nparams, "cpu_shares", new_cpu_shares)) {
         /* 
@@ -174,9 +177,9 @@ int set_schedinfo(virDomainPtr domain, virTypedParameterPtr params, int nparams,
 /* 
  * wrapper for set_schedinfo()
  */
-int set_cpu_shares(virDomainPtr domain, virTypedParameterPtr params, int nparams, int new_cpu_shares)
+int set_cpu_shares(virDomainPtr domain, int new_cpu_shares)
 {
-    return set_schedinfo(domain, params, nparams, new_cpu_shares);
+    return set_schedinfo(domain, new_cpu_shares);
 }
 
 /*
@@ -184,8 +187,11 @@ int set_cpu_shares(virDomainPtr domain, virTypedParameterPtr params, int nparams
  * set the blkio parameters of "weight" to the specific value
  * return 0 in case of success and -1 in case of error
  */
-int set_blkio(virDomainPtr domain, virTypedParameterPtr params, int *nparams, int new_weight)
+int set_blkio(virDomainPtr domain, int new_weight)
 {
+    virTypedParameterPtr params = NULL;
+    int *nparams = 0;
+
     get_blkio(domain, &params, nparams);
     /* set weight to new_weight */
     set_params_value(params, *nparams, "weight", new_weight);
@@ -198,7 +204,7 @@ int set_blkio(virDomainPtr domain, virTypedParameterPtr params, int *nparams, in
 /* 
  * wrapper for set_blkio() function
  */
-int set_blkio_weight(virDomainPtr domain, virTypedParameterPtr params, int *nparams, int new_weight)
+int set_blkio_weight(virDomainPtr domain, int new_weight)
 {
-    return set_blkio(domain, params, nparams, new_weight);
+    return set_blkio(domain, new_weight);
 }

@@ -35,3 +35,9 @@ function extract_commencts() #1: object file
 {
     egrep "^#"
 }
+
+# 提取文件扩展名
+function filext ()  $1
+{ 
+    echo ${1##*.}
+}
