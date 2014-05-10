@@ -66,27 +66,34 @@ int main()
     /* 这个函数威力太大，测试时玩玩~ */
     //virNodeSuspendForDuration(conn, VIR_NODE_SUSPEND_TARGET_MEM, 100, 0);
 
-    int start_cpu = -1;
+    int start_cpu = 1;
     int ncpus = 1;
     int domcpunparams = 0;
     virTypedParameterPtr domcpuparams = NULL;
+
     /* NEED to get domain pointer here first */
     int actdom_nr = virConnectNumOfDomains(conn);
     int *actdomids = (int *)malloc(sizeof(int) * actdom_nr);
     virConnectListDomains(conn, actdomids, actdom_nr);
     virDomainPtr *dp = malloc(sizeof(virDomainPtr *)*actdom_nr);
-    virTypedParameterPtr params;
-    int nparams;
+    virTypedParameterPtr params = NULL;
+    int nparams = 0;
     for (i = 0; i < actdom_nr; i++) { 
         dp[i] = virDomainLookupByID(conn, actdomids[i]);
-        //get_schedinfo(dp[i], &params, &nparams);
-        //print_typed_parameters(params, nparams);
+        get_schedinfo(dp[i], &params, &nparams);
+        print_typed_parameters(params, nparams);
     }
-    virDomainGetCPUStats(dp[0], domcpuparams, domcpunparams, start_cpu, ncpus, 0);
+    domcpunparams = virDomainGetCPUStats(dp[0], NULL, 0, start_cpu, 1, 0);
     domcpuparams = malloc(sizeof(virTypedParameter) * domcpunparams);
-
-    virDomainGetCPUStats(dp[0], domcpuparams, domcpunparams, -1, 1, 0);
+    memset(domcpuparams, 0, sizeof(virTypedParameter) * domcpunparams);
+    virDomainGetCPUStats(dp[0], domcpuparams, domcpunparams, start_cpu, ncpus, 0);
+    //virDomainGetCPUStats(dp[0], domcpuparams, domcpunparams, -1, 1, 0);
     print_typed_parameters(domcpuparams, domcpunparams);
+
+    virDomainInfoPtr dominfo = (virDomainInfoPtr)malloc(sizeof(virDomainInfo));
+    memset(dominfo, 0, sizeof(struct virDomainInfoPtr *));
+    virDomainGetInfo(dp[0], dominfo);
+    printf("cpuTime=%lld\n", dominfo->cpuTime);
 
     return 0;
 }
