@@ -24,18 +24,63 @@ char *hypervisor = "qemu:///system";
 int active_domain_num = 0;
 int nr_cores = 1;    /* by default, we suppose there is only one core in the host */
 
+/*
+ * Structure for CPU statistics.
+ * In activity buffer: First structure is for global CPU utilisation ("all").
+ * Following structures are for each individual CPU (0, 1, etc.)
+ */
+struct stats_cpu {
+	unsigned long long cpu_user		__attribute__ ((aligned (16)));
+	unsigned long long cpu_nice		__attribute__ ((aligned (16)));
+	unsigned long long cpu_sys		__attribute__ ((aligned (16)));
+	unsigned long long cpu_idle		__attribute__ ((aligned (16)));
+	unsigned long long cpu_iowait		__attribute__ ((aligned (16)));
+	unsigned long long cpu_steal		__attribute__ ((aligned (16)));
+	unsigned long long cpu_hardirq		__attribute__ ((aligned (16)));
+	unsigned long long cpu_softirq		__attribute__ ((aligned (16)));
+	unsigned long long cpu_guest		__attribute__ ((aligned (16)));
+	unsigned long long cpu_guest_nice	__attribute__ ((aligned (16)));
+};
+
+/* Structure for block devices statistics */
+struct stats_disk {
+	unsigned long long nr_ios	__attribute__ ((aligned (16)));
+	unsigned long rd_sect		__attribute__ ((aligned (16)));
+	unsigned long wr_sect		__attribute__ ((aligned (8)));
+	unsigned int rd_ticks		__attribute__ ((aligned (8)));
+	unsigned int wr_ticks		__attribute__ ((packed));
+	unsigned int tot_ticks		__attribute__ ((packed));
+	unsigned int rq_ticks		__attribute__ ((packed));
+	unsigned int major		__attribute__ ((packed));
+	unsigned int minor		__attribute__ ((packed));
+};
+
+/* Structure for network interfaces statistics */
+struct stats_net_dev {
+	unsigned long long rx_packets		__attribute__ ((aligned (16)));
+	unsigned long long tx_packets		__attribute__ ((aligned (16)));
+	unsigned long long rx_bytes		__attribute__ ((aligned (16)));
+	unsigned long long tx_bytes		__attribute__ ((aligned (16)));
+	unsigned long long rx_compressed	__attribute__ ((aligned (16)));
+	unsigned long long tx_compressed	__attribute__ ((aligned (16)));
+	unsigned long long multicast		__attribute__ ((aligned (16)));
+	unsigned int       speed		__attribute__ ((aligned (16)));
+	char 	 interface[16]	__attribute__ ((aligned (4)));
+	char	 duplex;
+};
+
 typedef struct phy_statistics {
     /* cpu related stat */
-    unsigned long user; /* in ticks */
-    unsigned long nice;
-    unsigned long system;
-    unsigned long idle;
-    unsigned long iowait;
-    unsigned long irq;
-    unsigned long softirq;
-    unsigned long steal;
-    unsigned long guest;
-    unsigned long guest_nice; /* not used in 2.6.32, exist in kernel of higher versions */
+    unsigned long long user; /* in ticks */
+    unsigned long long nice;
+    unsigned long long system;
+    unsigned long long idle;
+    unsigned long long iowait;
+    unsigned long long irq;
+    unsigned long long softirq;
+    unsigned long long steal;
+    unsigned long long guest;
+    unsigned long long guest_nice; /* since Linux 2.6.33 */
 
     /* memory related stat */
     unsigned long memtotal;
@@ -372,14 +417,30 @@ void extract_nic_bytes(char *buffer, long *rx_bytes, long *tx_bytes)
  */
 void get_phy_cpu_stat(struct phy_statistics *phy_stat)
 {
+    char line[8192];
     FILE *fp = fopen("/proc/stat", "r");
     if (NULL == fp) {
-        fprintf(stderr, "faild to open /proc/stat [%s]\n", strerror(errno));
+        fprintf(stderr, "failed to open /proc/stat [%s]\n", strerror(errno));
         exit(errno);
     }
-    fscanf(fp, "%*s %ld %ld %ld %ld %ld %ld %ld %ld %ld /*%ld*/\n", &phy_stat->user, &phy_stat->nice, &phy_stat->system,
-        &phy_stat->idle, &phy_stat->iowait, &phy_stat->irq, &phy_stat->softirq, &phy_stat->steal, &phy_stat->guest/*,
-        &phy_stat->guest_nice*/);
+
+    memset(line, 0, 8192);
+    if (NULL == fgets(line, sizeof(line), fp)) {
+        fprintf(stderr, "failed to read info from /proc/stat [%s]\n", strerror(errno));
+        exit(errno);
+    }
+
+    sscanf(line, "%*s %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu\n", 
+            &phy_stat->user, 
+            &phy_stat->nice, 
+            &phy_stat->system,
+            &phy_stat->idle, 
+            &phy_stat->iowait, 
+            &phy_stat->irq, 
+            &phy_stat->softirq, 
+            &phy_stat->steal, 
+            &phy_stat->guest,
+            &phy_stat->guest_nice);
 
     fclose(fp);
 }
@@ -479,15 +540,15 @@ void get_phy_workload(struct phy_statistics *phy_stat)
 void calculate_phy_load(struct mach_load *phyload, struct phy_statistics *phy_stat_before, 
         struct phy_statistics *phy_stat_after, long microsec)
 {
-    long cpu_ticks_before = phy_stat_before->user + phy_stat_before->nice + phy_stat_before->system + 
+    unsigned long long cpu_ticks_before = phy_stat_before->user + phy_stat_before->nice + phy_stat_before->system + 
         phy_stat_before->idle + phy_stat_before->iowait + phy_stat_before->irq + phy_stat_before->softirq +
-        phy_stat_before->steal + phy_stat_before->guest/* + phy_stat_before->guest_nice*/;
-    long cpu_ticks_after = phy_stat_after->user + phy_stat_after->nice + phy_stat_after->system + 
+        phy_stat_before->steal + phy_stat_before->guest + phy_stat_before->guest_nice;
+    unsigned long long cpu_ticks_after = phy_stat_after->user + phy_stat_after->nice + phy_stat_after->system + 
         phy_stat_after->idle + phy_stat_after->iowait + phy_stat_after->irq + phy_stat_after->softirq +
-        phy_stat_after->steal + phy_stat_after->guest/* + phy_stat_after->guest_nice*/;
+        phy_stat_after->steal + phy_stat_after->guest + phy_stat_after->guest_nice;
 
-    long delta_cpu_time = cpu_ticks_after - cpu_ticks_before; /* total elapsed cpu time in ticks */
-    long delta_idle_time = phy_stat_after->idle - phy_stat_before->idle;
+    unsigned long long delta_cpu_time = cpu_ticks_after - cpu_ticks_before; /* total elapsed cpu time in ticks */
+    unsigned long long delta_idle_time = phy_stat_after->idle - phy_stat_before->idle;
 
     long avg_mem_unused = (phy_stat_after->memfree + phy_stat_after->buffers + phy_stat_after->cached +
         phy_stat_before->memfree + phy_stat_before->buffers + phy_stat_before->cached) / 2;
