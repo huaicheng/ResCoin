@@ -2,7 +2,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../rc.h"
+#include "../src/rc.h"
+#include <errno.h>
 
 int main()
 {
@@ -94,6 +95,36 @@ int main()
     memset(dominfo, 0, sizeof(struct virDomainInfoPtr *));
     virDomainGetInfo(dp[0], dominfo);
     printf("cpuTime=%lld\n", dominfo->cpuTime);
+
+    char *domname = (char *)malloc(sizeof(char)*20);
+    domname = virDomainGetName(dp[0]);
+    printf("operating domain [%s]\n", domname);
+
+    virDomainMemoryStatStruct stats[VIR_DOMAIN_MEMORY_STAT_NR];
+    int nr_stats = virDomainMemoryStats(dp[0], stats, VIR_DOMAIN_MEMORY_STAT_NR, 0);
+    if (nr_stats == -1) {
+        fprintf(stderr, "Failed to get memory statistics for domain");
+        exit(errno);
+    }
+    for (i = 0; i < nr_stats; i++) {
+        if (stats[i].tag == VIR_DOMAIN_MEMORY_STAT_SWAP_IN)
+            printf("swap_in %llu\n", stats[i].val);
+        if (stats[i].tag == VIR_DOMAIN_MEMORY_STAT_SWAP_OUT)
+            printf("swap_out %llu\n", stats[i].val);
+        if (stats[i].tag == VIR_DOMAIN_MEMORY_STAT_MAJOR_FAULT)
+            printf("major_fault %llu\n", stats[i].val);
+        if (stats[i].tag == VIR_DOMAIN_MEMORY_STAT_MINOR_FAULT)
+            printf("minor_fault %llu\n", stats[i].val);
+        if (stats[i].tag == VIR_DOMAIN_MEMORY_STAT_UNUSED)
+            printf("unused %llu\n", stats[i].val);
+        if (stats[i].tag == VIR_DOMAIN_MEMORY_STAT_AVAILABLE)
+            printf("available %llu\n", stats[i].val);
+        if (stats[i].tag == VIR_DOMAIN_MEMORY_STAT_ACTUAL_BALLOON)
+            printf("actual %llu\n", stats[i].val);
+        if (stats[i].tag == VIR_DOMAIN_MEMORY_STAT_RSS)
+            printf("rss %llu\n", stats[i].val);
+    }
+
 
     return 0;
 }

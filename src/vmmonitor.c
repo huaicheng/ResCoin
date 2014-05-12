@@ -18,33 +18,34 @@
 
 #define TIME_INTERVAL   10      /* in seconds */
 #define ETHERNET        "br0"
-#define DISK            "sdb"
+#define DISK            "sda"
 
 char *hypervisor = "qemu:///system";
 int active_domain_num = 0;
 int nr_cores = 1;    /* by default, we suppose there is only one core in the host */
 
+typedef unsigned long long ull;
 /*
  * Structure for CPU statistics.
  * In activity buffer: First structure is for global CPU utilisation ("all").
  * Following structures are for each individual CPU (0, 1, etc.)
  */
 struct stats_cpu {
-	unsigned long long cpu_user		__attribute__ ((aligned (16)));
-	unsigned long long cpu_nice		__attribute__ ((aligned (16)));
-	unsigned long long cpu_sys		__attribute__ ((aligned (16)));
-	unsigned long long cpu_idle		__attribute__ ((aligned (16)));
-	unsigned long long cpu_iowait		__attribute__ ((aligned (16)));
-	unsigned long long cpu_steal		__attribute__ ((aligned (16)));
-	unsigned long long cpu_hardirq		__attribute__ ((aligned (16)));
-	unsigned long long cpu_softirq		__attribute__ ((aligned (16)));
-	unsigned long long cpu_guest		__attribute__ ((aligned (16)));
-	unsigned long long cpu_guest_nice	__attribute__ ((aligned (16)));
+	ull cpu_user		__attribute__ ((aligned (16)));
+	ull cpu_nice		__attribute__ ((aligned (16)));
+	ull cpu_sys		__attribute__ ((aligned (16)));
+	ull cpu_idle		__attribute__ ((aligned (16)));
+	ull cpu_iowait		__attribute__ ((aligned (16)));
+	ull cpu_steal		__attribute__ ((aligned (16)));
+	ull cpu_hardirq		__attribute__ ((aligned (16)));
+	ull cpu_softirq		__attribute__ ((aligned (16)));
+	ull cpu_guest		__attribute__ ((aligned (16)));
+	ull cpu_guest_nice	__attribute__ ((aligned (16)));
 };
 
 /* Structure for block devices statistics */
 struct stats_disk {
-	unsigned long long nr_ios	__attribute__ ((aligned (16)));
+	ull nr_ios	__attribute__ ((aligned (16)));
 	unsigned long rd_sect		__attribute__ ((aligned (16)));
 	unsigned long wr_sect		__attribute__ ((aligned (8)));
 	unsigned int rd_ticks		__attribute__ ((aligned (8)));
@@ -57,13 +58,13 @@ struct stats_disk {
 
 /* Structure for network interfaces statistics */
 struct stats_net_dev {
-	unsigned long long rx_packets		__attribute__ ((aligned (16)));
-	unsigned long long tx_packets		__attribute__ ((aligned (16)));
-	unsigned long long rx_bytes		__attribute__ ((aligned (16)));
-	unsigned long long tx_bytes		__attribute__ ((aligned (16)));
-	unsigned long long rx_compressed	__attribute__ ((aligned (16)));
-	unsigned long long tx_compressed	__attribute__ ((aligned (16)));
-	unsigned long long multicast		__attribute__ ((aligned (16)));
+	ull rx_packets		__attribute__ ((aligned (16)));
+	ull tx_packets		__attribute__ ((aligned (16)));
+	ull rx_bytes		__attribute__ ((aligned (16)));
+	ull tx_bytes		__attribute__ ((aligned (16)));
+	ull rx_compressed	__attribute__ ((aligned (16)));
+	ull tx_compressed	__attribute__ ((aligned (16)));
+	ull multicast		__attribute__ ((aligned (16)));
 	unsigned int       speed		__attribute__ ((aligned (16)));
 	char 	 interface[16]	__attribute__ ((aligned (4)));
 	char	 duplex;
@@ -71,16 +72,16 @@ struct stats_net_dev {
 
 typedef struct phy_statistics {
     /* cpu related stat */
-    unsigned long long user; /* in ticks */
-    unsigned long long nice;
-    unsigned long long system;
-    unsigned long long idle;
-    unsigned long long iowait;
-    unsigned long long irq;
-    unsigned long long softirq;
-    unsigned long long steal;
-    unsigned long long guest;
-    unsigned long long guest_nice; /* since Linux 2.6.33 */
+    ull user; /* in ticks */
+    ull nice;
+    ull system;
+    ull idle;
+    ull iowait;
+    ull irq;
+    ull softirq;
+    ull steal;
+    ull guest;
+    ull guest_nice; /* since Linux 2.6.33 */
 
     /* memory related stat */
     unsigned long memtotal;
@@ -89,12 +90,12 @@ typedef struct phy_statistics {
     unsigned long cached;
 
     /* disk related stat */
-    unsigned long rd_sectors;
-    unsigned long wr_sectors;
+    ull rd_sectors;
+    ull  wr_sectors;
 
     /* net related stat */
-    unsigned long rx_bytes;
-    unsigned long tx_bytes;
+    ull rx_bytes;
+    ull tx_bytes;
 
 }phy_statistics;
 
@@ -114,9 +115,10 @@ typedef struct vm_info {
 }vm_info;
 
 typedef struct vm_statistics {
-    unsigned long long cpu_time;
+    ull cpu_time;
     unsigned long maxmem;
     unsigned long curmem;
+    unsigned long rss; // resident set size
     long long rd_bytes;
     long long wr_bytes;
     long long rx_bytes;
@@ -238,6 +240,19 @@ void get_vm_ifpath(char *xml, char *ifpath)
 void get_vm_dominfo(struct vm_statistics *vm_stat, struct vm_info *vminfo)
 {
     int ret;
+    int i;
+    virDomainMemoryStatStruct stats[VIR_DOMAIN_MEMORY_STAT_NR];
+    int nr_stats = virDomainMemoryStats(vminfo->dp, stats, VIR_DOMAIN_MEMORY_STAT_NR, 0);
+    if (nr_stats == -1) {
+        fprintf(stderr, "Failed to get VM memory statistics for");
+        exit(errno);
+    }
+    for (i = 0; i < nr_stats; i++) 
+        if (stats[i].tag == VIR_DOMAIN_MEMORY_STAT_RSS) {
+            vm_stat->rss = stats[i].val;
+            break;
+        }
+
     virDomainInfoPtr dominfo = (virDomainInfoPtr)malloc(sizeof(virDomainInfo));
     ret = virDomainGetInfo(vminfo->dp, dominfo);
     if (-1 == ret) {
@@ -301,7 +316,7 @@ void get_vm_workload(struct vm_statistics *vm_stat, struct vm_info *vminfo)
 }
 
 void calculate_vm_load(struct mach_load *vmload, struct vm_statistics *vm_stat_before, 
-        struct vm_statistics *vm_stat_after, long long microsec)
+        struct vm_statistics *vm_stat_after, long long microsec, unsigned long total_mem)
 {
 
     long long delta_cpu_time = vm_stat_after->cpu_time - vm_stat_before->cpu_time;
@@ -316,10 +331,21 @@ void calculate_vm_load(struct mach_load *vmload, struct vm_statistics *vm_stat_b
      * delta_cpu_time represent time differences domain get to run during time "time"
      */
     vmload->cpu_load = delta_cpu_time * 1.0 / 1000 / microsec * 100 / nr_cores;  
-    vmload->mem_load = (vm_stat_after->curmem + vm_stat_before->curmem) / 2.0 / vm_stat_after->maxmem;
+
+    /* (2). %MEM: use the rss size as the total used memory of VM */
+    vmload->mem_load = (vm_stat_after->rss) * 1.0 / total_mem * 100; 
+    //vmload->mem_load = (vm_stat_after->curmem)  * 1.0 / total_mem * 100;
+
+    /* (3). vm disk read rate */
     vmload->rd_load = delta_rd_bytes * 1.0 / 1024 / microsec * 1000000;
+
+    /* (4). vm disk write rate */
     vmload->wr_load = delta_wr_bytes * 1.0 / 1024 / microsec * 1000000;
+
+    /* (5). vm net rx rate */
     vmload->rx_load = delta_rx_bytes * 1.0 / 1024 / microsec * 1000000;
+
+    /* (6). vm net tx rate */
     vmload->tx_load = delta_tx_bytes * 1.0 / 1024 / microsec * 1000000;
 }
 
@@ -382,7 +408,7 @@ int match_nic(char *buffer, char *nic)
         return 0;
 }
 
-void extract_nic_bytes(char *buffer, long *rx_bytes, long *tx_bytes)
+void extract_nic_bytes(char *buffer, ull *rx_bytes, ull *tx_bytes)
 {
     int i, j, k;
     int has_space = 1;
@@ -397,14 +423,14 @@ void extract_nic_bytes(char *buffer, long *rx_bytes, long *tx_bytes)
     if (buffer[i] != ' ')
         has_space = 0;
     if (has_space) {
-        sscanf(buffer, "%*s %ld %*d %*d %*d %*d %*d %*d %*d %ld", rx_bytes, tx_bytes);
+        sscanf(buffer, "%*s %lld %*d %*d %*d %*d %*d %*d %*d %lld", rx_bytes, tx_bytes);
     }
     else {
         k = 0;
         for (j = i; buffer[j] != ' '; j++)
             rx[k++] = buffer[j];
         *rx_bytes = atol(rx);
-        sscanf(buffer, "%*s %*d %*d %*d %*d %*d %*d %*d %ld", tx_bytes);
+        sscanf(buffer, "%*s %*d %*d %*d %*d %*d %*d %*d %llu", tx_bytes);
         //printf("in extract_nic_bytes, rx=%ld, tx=%ld\n", *rx_bytes, *tx_bytes);
     }
     
@@ -478,7 +504,7 @@ void get_phy_disk_stat(struct phy_statistics *phy_stat, const char *disk)
     while (fgets(buf, sizeof(buf), fp)) {
         sscanf(buf, "%*d %*d %s", device);
         if (0 == strcmp(disk, device)) {
-            sscanf(buf, "%*d %*d %*s %*d %*d %ld %*d %*d %ld", &phy_stat->rd_sectors, &phy_stat->wr_sectors);
+            sscanf(buf, "%*u %*u %*s %*u %*u %Lu %*u %*d %Lu", &phy_stat->rd_sectors, &phy_stat->wr_sectors);
             break;
         }
         memset(device, '\0', sizeof(device));
@@ -534,37 +560,63 @@ void get_phy_workload(struct phy_statistics *phy_stat)
     get_phy_net_stat(phy_stat, nic);
 }
 
+/* sum up user+nice+sys+iowait+idle+irq+softirq+steal, precluding guest and guest_nice */
+ull sum_cpu_stats(struct phy_statistics *phy_stats)
+{
+    ull cpu_ticks = 
+        phy_stats->user + 
+        phy_stats->nice + 
+        phy_stats->system + 
+        phy_stats->idle + 
+        phy_stats->iowait + 
+        phy_stats->irq + 
+        phy_stats->softirq +
+        phy_stats->steal /*+ 
+        phy_stats->guest + 
+        phy_stats->guest_nice*/;
+    return cpu_ticks;
+}
+
 /*
  * caculate physical machine's workload
  */
 void calculate_phy_load(struct mach_load *phyload, struct phy_statistics *phy_stat_before, 
         struct phy_statistics *phy_stat_after, long microsec)
 {
-    unsigned long long cpu_ticks_before = phy_stat_before->user + phy_stat_before->nice + phy_stat_before->system + 
-        phy_stat_before->idle + phy_stat_before->iowait + phy_stat_before->irq + phy_stat_before->softirq +
-        phy_stat_before->steal + phy_stat_before->guest + phy_stat_before->guest_nice;
-    unsigned long long cpu_ticks_after = phy_stat_after->user + phy_stat_after->nice + phy_stat_after->system + 
-        phy_stat_after->idle + phy_stat_after->iowait + phy_stat_after->irq + phy_stat_after->softirq +
-        phy_stat_after->steal + phy_stat_after->guest + phy_stat_after->guest_nice;
+    ull cpu_ticks_before = sum_cpu_stats(phy_stat_before);
+    ull cpu_ticks_after = sum_cpu_stats(phy_stat_after);
 
-    unsigned long long delta_cpu_time = cpu_ticks_after - cpu_ticks_before; /* total elapsed cpu time in ticks */
-    unsigned long long delta_idle_time = phy_stat_after->idle - phy_stat_before->idle;
+    /* total elapsed cpu time in ticks, equavelent to the difference of gettimeofday */
+    ull delta_cpu_time = cpu_ticks_after - cpu_ticks_before; 
+    ull delta_idle_time = phy_stat_after->idle - phy_stat_before->idle;
 
-    long avg_mem_unused = (phy_stat_after->memfree + phy_stat_after->buffers + phy_stat_after->cached +
-        phy_stat_before->memfree + phy_stat_before->buffers + phy_stat_before->cached) / 2;
+    /* get memory unused(including the "free+buffers+cached" */
+    unsigned long mem_unused = phy_stat_after->memfree + phy_stat_after->buffers + phy_stat_after->cached;
 
-    long delta_rd_bytes = (phy_stat_after->rd_sectors - phy_stat_before->rd_sectors) * 512;
-    long delta_wr_bytes = (phy_stat_after->wr_sectors - phy_stat_before->wr_sectors) * 512;
+    ull delta_rd_bytes = (phy_stat_after->rd_sectors - phy_stat_before->rd_sectors) * 512;
+    ull delta_wr_bytes = (phy_stat_after->wr_sectors - phy_stat_before->wr_sectors) * 512;
 
-    long delta_rx_bytes = phy_stat_after->rx_bytes - phy_stat_before->rx_bytes;
-    long delta_tx_bytes = phy_stat_after->tx_bytes - phy_stat_before->tx_bytes;
+    ull delta_rx_bytes = phy_stat_after->rx_bytes - phy_stat_before->rx_bytes;
+    ull delta_tx_bytes = phy_stat_after->tx_bytes - phy_stat_before->tx_bytes;
 
     /* calculate the corresponding workload of each VM using the monitored statistics data */
-    phyload->cpu_load = 100 - delta_idle_time * 1.0 / delta_cpu_time * 100;
-    phyload->mem_load = 100 - avg_mem_unused * 1.0 / phy_stat_after->memtotal * 100;
+
+    /* (1) CPU%: we take non-idle cpu time as the time cpu busying running tasks */
+    phyload->cpu_load = 100 - delta_idle_time * 1.0 / delta_cpu_time * 100; /* 1~100(%) */
+
+    /* (2) MEM%: get the memory usage at the time poniter */
+    phyload->mem_load = 100 - mem_unused * 1.0 / phy_stat_after->memtotal * 100; /* 1~100(%) */
+
+    /* (3) DISK read rate */
     phyload->rd_load = delta_rd_bytes * 1.0 / 1024 / microsec * 1000000; /* in Kbps */
+
+    /* (4) DISK write rate */
     phyload->wr_load = delta_wr_bytes * 1.0 / 1024 / microsec * 1000000; /* in Kbps */
+
+    /* (5) NET rx rate */
     phyload->rx_load = delta_rx_bytes * 1.0 / 1024 / microsec * 1000000; /* in Kbps */
+
+    /* (6) NET tx rate */
     phyload->tx_load = delta_tx_bytes * 1.0 / 1024 / microsec * 1000000; /* in Kbps */
 }
 
@@ -680,7 +732,7 @@ int main(int argc, char **argv)
         /* elaspsed time in microsecond */
         long elapsed_time = (tv_after->tv_sec - tv_before->tv_sec) * 1000000 + (tv_after->tv_usec - tv_before->tv_usec);
         for (i = 0; i < active_domain_num; i++) {
-            calculate_vm_load(&vm_sysload[i], &vm_stat_before[i], &vm_stat_after[i], elapsed_time);
+            calculate_vm_load(&vm_sysload[i], &vm_stat_before[i], &vm_stat_after[i], elapsed_time, nodeinfo->memory);
             /* TODO: flush the buffer when program exits abnormally using signal processing */
             fprintf(vminfo[i].fp, "%-6ld %-6ld %-6.2lf %-6.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf\n", 
                     (long)curtime, index, vm_sysload[i].cpu_load, vm_sysload[i].mem_load, 

@@ -95,6 +95,10 @@ int get_blkio(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
     return 0;
 }
 
+int get_mem(virDomainPtr domain)
+{
+}
+
 /*
  * TODO: params.value is a union, how should the new_value be set to the approriate data type ?
  * change params[field].value to new_value, this function is currently used to modify cpu_shares
@@ -207,4 +211,8 @@ int set_blkio(virDomainPtr domain, int new_weight)
 int set_blkio_weight(virDomainPtr domain, int new_weight)
 {
     return set_blkio(domain, new_weight);
+}
+
+int set_mem(virDomainPtr domain, int memsize)
+{
 }
