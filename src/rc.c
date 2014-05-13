@@ -87,7 +87,7 @@ int get_blkio(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
     virDomainGetBlkioParameters(domain, *params, nparams, 0);
     *params = (virTypedParameterPtr)malloc(sizeof(**params) * (*nparams));
     /* call virDomainGetBlkioParameters() again to fill information to the params struct */
-    if (-1 == virDomainGetBlkioParameters(domain, *params, nparams, 0)) {
+    if (-1 == virDomainGetBlkioParameters(domain, *params, *nparams, 0)) {
         fprintf(stderr, "get domain blkio parameters failed...\n");
         return -1;
     }
@@ -95,8 +95,23 @@ int get_blkio(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
     return 0;
 }
 
-int get_mem(virDomainPtr domain)
+/* 
+ * Get memory parameters of the given domain, it automatically allocate space
+ * for params parametes so there is no need for you to initialize the variable
+ * of "params" and "nparams". This function will decide the correct value for
+ * them.
+ * @Return 0 in case of success and -1 in case of error
+ */
+int get_mem(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
 {
+    if (virDomainGetMemoryParameters(domain, NULL, nparams, 0) == 0 && (*nparams != 0)) {
+        *params = (virTypedParameterPtr)malloc(sizeof(**params) * (*nparams));
+        memset(params, 0, sizeof(**params) * (*nparams));
+        if (0 != virDomainGetMemoryParameters(domain, *params, *nparams, 0))
+            return -1;
+        return 0;
+    }
+    reuturn -1;
 }
 
 /*
@@ -213,6 +228,9 @@ int set_blkio_weight(virDomainPtr domain, int new_weight)
     return set_blkio(domain, new_weight);
 }
 
-int set_mem(virDomainPtr domain, int memsize)
+int set_mem(virDomainPtr domain, unsigned long new_memsize)
 {
+    if (virDomainSetMemory(domain, new_memsize) != 0) {
+        fprintf(stderr, "Can't set VM memory to %ld\n", new_memsize);
+        exit(errno);
 }
