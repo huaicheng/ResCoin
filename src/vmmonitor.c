@@ -19,10 +19,31 @@
 #define TIME_INTERVAL   10      /* in seconds */
 #define ETHERNET        "br0"
 #define DISK            "sda"
+#define BLKNAMEMAX      64
+#define IFNAMEMAX       64
+#define DOMNAMEMAX       64
+#define ETC_HOSTS       "/etc/hosts"
 
 char *hypervisor = "qemu:///system";
 int active_domain_num = 0;
 int nr_cores = 1;    /* by default, we suppose there is only one core in the host */
+
+struct vm_ipaddr_name_list 
+{
+    char domname[DOMNAMEMAX];   /* 
+    char ipaddr[16]; /* xxx.xxx.xxx.xxx */
+};
+
+/*
+ * you should manually fill this array with your 
+ * virtual machine domain name and ipaddr info
+ */
+struct vm_ipaddr_name_list vminl[] = {
+    { "vmaster", "192.168.0.231" },
+    { "vslave01", "192.168.0.232" },
+    { "vslave02", "192.168.0.233" }
+};
+
 
 typedef unsigned long long ull;
 /*
@@ -112,17 +133,32 @@ typedef struct vm_info {
     char *blkname;
     char *ifname;
     FILE *fp;
+    // Need to add IP Addr info here
+    char *ipaddr;
 }vm_info;
 
 typedef struct vm_statistics {
     ull cpu_time;
+
+    /* the following three are gotten from libvirt API */
     unsigned long maxmem;
     unsigned long curmem;
-    unsigned long rss; // resident set size
-    long long rd_bytes;
-    long long wr_bytes;
-    long long rx_bytes;
-    long long tx_bytes;
+    unsigned long rss; /* VM resident set size */
+
+    /* 
+     * the following are received from the agent in guest 
+     * mem_percentage = (memfree+buffers+cached)/memtotal
+     */
+    unsigned long memtotal;
+    unsigned long memfree;
+    unsigned long buffers;
+    unsigned long cached;
+
+    ull rd_bytes;
+    ull wr_bytes;
+
+    ull rx_bytes;
+    ull tx_bytes;
 }vm_statistics;
 
 /* used for both physical and VMs */
@@ -145,12 +181,14 @@ void init_vm_info(struct vm_info *vminfo)
     vminfo->dp = NULL;
     /* get domname by virDomainGetName, need not allocate space for domname field */
     /* vminfo->domname = (char *)malloc(sizeof(char) * 100); */
-    vminfo->blkname = (char *)malloc(sizeof(char) * 100);
-    vminfo->ifname = (char *)malloc(sizeof(char) * 100);
+    vminfo->blkname = (char *)malloc(sizeof(char) * BLKNAMEMAX);
+    vminfo->ifname = (char *)malloc(sizeof(char) * IFNAMEMAX);
     /* memset(vminfo->domname, '\0', sizeof(vminfo->domname)); */
-    memset(vminfo->blkname, '\0', 100);
-    memset(vminfo->ifname, '\0', 100);
+    memset(vminfo->blkname, '\0', BLKNAMEMAX);
+    memset(vminfo->ifname, '\0', IFNAMEMAX);
     vminfo->fp = NULL;
+    vminfo->ipaddr = (char *)malloc(sizeof(char) * 16); /* xxx.xxx.xxx.xxx = 16bits */
+    memset(vminfo->ipaddr, '\0', 16);
 }
 
 void init_phy_info(struct phy_info *phyinfo)
@@ -237,12 +275,36 @@ void get_vm_ifpath(char *xml, char *ifpath)
         ifpath[i] = *r;
 }
 
-void get_vm_dominfo(struct vm_statistics *vm_stat, struct vm_info *vminfo)
+void get_vm_ipaddr(char *ipaddr, const char *vmhostname)
+{
+    char buff[1024];
+    char name[32];
+    FILE *fp;
+    if (NULL == (fp = fopen(ETC_HOSTS, "r"))) {
+        perror("fopen /etc/hosts");
+        exit(errno);
+    }
+    memset(buff, '\0', sizeof(buff));
+    memset(hostname, '\0', sizeof(hostname));
+    while (fgets(buff, sizeof(buff), fp)) {
+        if (!strncmp(buff, "#", 1))
+            continue;
+        ssanf(buff, "%s%s",ipaddr,  hostname);
+        if (strcmp(hostname, vmhostname)) {
+            
+    }
+}
+
+/* 
+ * get_vm_dominfo is responsible for getting static info of VMs, called once, 
+ * and the info need not change
+ */
+void get_vm_dominfo(struct virDomainPtr dp, struct vm_statistics *vm_stat)
 {
     int ret;
     int i;
     virDomainMemoryStatStruct stats[VIR_DOMAIN_MEMORY_STAT_NR];
-    int nr_stats = virDomainMemoryStats(vminfo->dp, stats, VIR_DOMAIN_MEMORY_STAT_NR, 0);
+    int nr_stats = virDomainMemoryStats(dp, stats, VIR_DOMAIN_MEMORY_STAT_NR, 0);
     if (nr_stats == -1) {
         fprintf(stderr, "Failed to get VM memory statistics for");
         exit(errno);
@@ -254,7 +316,7 @@ void get_vm_dominfo(struct vm_statistics *vm_stat, struct vm_info *vminfo)
         }
 
     virDomainInfoPtr dominfo = (virDomainInfoPtr)malloc(sizeof(virDomainInfo));
-    ret = virDomainGetInfo(vminfo->dp, dominfo);
+    ret = virDomainGetInfo(dp, dominfo);
     if (-1 == ret) {
         fprintf(stderr, "failed to get domaininfo of VMs\n");
         exit(VIR_FROM_DOM);
@@ -262,6 +324,13 @@ void get_vm_dominfo(struct vm_statistics *vm_stat, struct vm_info *vminfo)
     vm_stat->cpu_time = dominfo->cpuTime; /* in nanoseconds */
     vm_stat->maxmem = dominfo->maxMem;    /* in KiloBytes */
     vm_stat->curmem = dominfo->memory;    /* in KiloBytes */
+
+    /* 
+     * read info from host /etc/hosts to get VMs' IPs, domain name must be know
+     * before this operation because we suppose the host administrator had written
+     * VMs' ip along with the domain name to /etc/hosts file
+     */
+    
 
     free(dominfo);
 }
@@ -316,25 +385,27 @@ void get_vm_workload(struct vm_statistics *vm_stat, struct vm_info *vminfo)
 }
 
 void calculate_vm_load(struct mach_load *vmload, struct vm_statistics *vm_stat_before, 
-        struct vm_statistics *vm_stat_after, long long microsec, unsigned long total_mem)
+        struct vm_statistics *vm_stat_after, ull microsec, unsigned long total_mem)
 {
 
-    long long delta_cpu_time = vm_stat_after->cpu_time - vm_stat_before->cpu_time;
-    long long delta_rd_bytes = vm_stat_after->rd_bytes - vm_stat_before->rd_bytes;
-    long long delta_wr_bytes = vm_stat_after->wr_bytes - vm_stat_before->wr_bytes;
-    long long delta_rx_bytes = vm_stat_after->rx_bytes - vm_stat_before->rx_bytes;
-    long long delta_tx_bytes = vm_stat_after->tx_bytes - vm_stat_before->tx_bytes;
+    ull delta_cpu_time = vm_stat_after->cpu_time - vm_stat_before->cpu_time;
+    ull delta_rd_bytes = vm_stat_after->rd_bytes - vm_stat_before->rd_bytes;
+    ull delta_wr_bytes = vm_stat_after->wr_bytes - vm_stat_before->wr_bytes;
+    ull delta_rx_bytes = vm_stat_after->rx_bytes - vm_stat_before->rx_bytes;
+    ull delta_tx_bytes = vm_stat_after->tx_bytes - vm_stat_before->tx_bytes;
 
     /* calculate the corresponding workload of each VM using the monitored statistics data */
 
-    /* (1). %CPU = 100 × delta_cpu_time / (time × nr_cores × 10^9) 
+    /* 
+     * (1). %CPU = 100 × delta_cpu_time / (time × nr_cores × 10^9) 
      * delta_cpu_time represent time differences domain get to run during time "time"
      */
     vmload->cpu_load = delta_cpu_time * 1.0 / 1000 / microsec * 100 / nr_cores;  
 
     /* (2). %MEM: use the rss size as the total used memory of VM */
-    vmload->mem_load = (vm_stat_after->rss) * 1.0 / total_mem * 100; 
+    //vmload->mem_load = (vm_stat_after->rss) * 1.0 / total_mem * 100; 
     //vmload->mem_load = (vm_stat_after->curmem)  * 1.0 / total_mem * 100;
+    get_vm_percentage();
 
     /* (3). vm disk read rate */
     vmload->rd_load = delta_rd_bytes * 1.0 / 1024 / microsec * 1000000;
