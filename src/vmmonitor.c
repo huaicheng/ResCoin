@@ -4,25 +4,32 @@
 
 #include <libvirt/libvirt.h>    /* libvirt API */
 #include <libvirt/virterror.h>  /* libvirt error handling */
+#include <sys/socket.h>         /* socket */
+#include <netinet/in.h>         /* struct sockaddr */
 #include <sys/time.h>           /* gettimeofday() */
 #include <sys/types.h>          /* time_t etc. */
-#include <stdbool.h>
+#include <inttypes.h>
+#include <stdbool.h>            /* bool type */
 #include <unistd.h>
-#include <time.h>               /* time() */
+#include <time.h>               /* time()/ctime() */
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>              /* system error number */
 
-#define DOMAIN_XML_SIZE 4096    /* in bytes */
+#define L_PORT          4588    /* server listen port */
+#define DOMAIN_XML_SIZE 8192    /* in bytes */
+#define MAXLINE         8192
 
 #define TIME_INTERVAL   10      /* in seconds */
 #define ETHERNET        "br0"
 #define DISK            "sda"
 #define BLKNAMEMAX      64
 #define IFNAMEMAX       64
-#define DOMNAMEMAX       64
+#define DOMNAMEMAX      64
+#define IPSZ            16
 #define ETC_HOSTS       "/etc/hosts"
+#define FORMATS         "%-6ld %-6ld %-6.2lf %-6.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf\n"
 
 char *hypervisor = "qemu:///system";
 int active_domain_num = 0;
@@ -30,8 +37,8 @@ int nr_cores = 1;    /* by default, we suppose there is only one core in the hos
 
 struct vm_ipaddr_name_list 
 {
-    char domname[DOMNAMEMAX];   /* 
-    char ipaddr[16]; /* xxx.xxx.xxx.xxx */
+    char domname[DOMNAMEMAX];   
+    char ipaddr[IPSZ]; /* xxx.xxx.xxx.xxx */
 };
 
 /*
@@ -44,6 +51,7 @@ struct vm_ipaddr_name_list vminl[] = {
     { "vslave02", "192.168.0.233" }
 };
 
+#define vminlsz sizeof(vminl)/sizeof(struct vm_ipaddr_name_list)
 
 typedef unsigned long long ull;
 /*
@@ -91,6 +99,14 @@ struct stats_net_dev {
 	char	 duplex;
 };
 
+enum {
+    MEMTOTAL,
+    MEMFREE,
+    BUFFERS,
+    CACHED,
+    NR_MEMINFO // all mem info we need
+};
+
 typedef struct phy_statistics {
     /* cpu related stat */
     ull user; /* in ticks */
@@ -127,14 +143,15 @@ typedef struct phy_info {
 }phy_info;
 
 typedef struct vm_info {
-    int id;
+    /* we depend on "dp" to acquire other field */
     virDomainPtr dp;
-    const char *domname;
-    char *blkname;
-    char *ifname;
+    int id;
+    /* virDomainGetName, no need to allocate for domname */
+    const char *domname; 
+    char blkname[BLKNAMEMAX];
+    char ifname[IFNAMEMAX];
     FILE *fp;
-    // Need to add IP Addr info here
-    char *ipaddr;
+    char ipaddr[IPSZ];
 }vm_info;
 
 typedef struct vm_statistics {
@@ -149,10 +166,10 @@ typedef struct vm_statistics {
      * the following are received from the agent in guest 
      * mem_percentage = (memfree+buffers+cached)/memtotal
      */
-    unsigned long memtotal;
-    unsigned long memfree;
-    unsigned long buffers;
-    unsigned long cached;
+    uint32_t memtotal;
+    uint32_t memfree;
+    uint32_t buffers;
+    uint32_t cached;
 
     ull rd_bytes;
     ull wr_bytes;
@@ -172,23 +189,22 @@ typedef struct mach_load {
 }mach_load;
 
 
+
+void create_vm_rst_file(struct vm_info *vminfo);
+
+
 /*
- * must be called before using struct vm_info
+ * must be called before using struct vm_info, only need once
  */
 void init_vm_info(struct vm_info *vminfo)
 {
     vminfo->id = -1;
     vminfo->dp = NULL;
-    /* get domname by virDomainGetName, need not allocate space for domname field */
-    /* vminfo->domname = (char *)malloc(sizeof(char) * 100); */
-    vminfo->blkname = (char *)malloc(sizeof(char) * BLKNAMEMAX);
-    vminfo->ifname = (char *)malloc(sizeof(char) * IFNAMEMAX);
-    /* memset(vminfo->domname, '\0', sizeof(vminfo->domname)); */
+    vminfo->domname = NULL;
     memset(vminfo->blkname, '\0', BLKNAMEMAX);
     memset(vminfo->ifname, '\0', IFNAMEMAX);
     vminfo->fp = NULL;
-    vminfo->ipaddr = (char *)malloc(sizeof(char) * 16); /* xxx.xxx.xxx.xxx = 16bits */
-    memset(vminfo->ipaddr, '\0', 16);
+    memset(vminfo->ipaddr, '\0', IPSZ);
 }
 
 void init_phy_info(struct phy_info *phyinfo)
@@ -234,13 +250,16 @@ void print_mach_load(struct mach_load *vmload)
 /* 
  * match the "source file" field to get the PATH of the virtual disk 
  * WARNING: currently, only consider the ONLY ONE virtual disk situation here
+ * return 0 in case of success and -1 in case of error
  */
-void get_vm_blkpath(char *xml, char *blkpath)
+int get_vm_blkname(const char *xml, char *blkname)
 {
     int i;
     char *p = strstr(xml, "source file");
+    /* TODO: read each line of XML each time and then process it */
     if (NULL == p)
-        return;
+        return -1;
+
     char *q = NULL, *r = NULL;
     for (; p++; p) {
         if (*p == '\'') {
@@ -255,54 +274,76 @@ void get_vm_blkpath(char *xml, char *blkpath)
         }
     }
     for (i = 0, p = q; p <= r; p++, i++)
-        blkpath[i] = *p;
+        blkname[i] = *p;
+    return 0;
 }
 
 /* 
  * match the "vnet" field to get the PATH of the virtual interface 
  * WARNING: currently, only consider the ONLY ONE virtual interface situation here
  */
-void get_vm_ifpath(char *xml, char *ifpath)
+int get_vm_ifname(char *xml, char *ifname)
 {
     int i = 0;
     char *q = NULL, *r = NULL;
     char *p = strstr(xml, "vnet");
     if (NULL == p)
-        return;
+        return -1;
+
     for (q = p; *q != '\''; q++) 
         i++;
     for (i = 0, r = p; r < q; r++, i++)
-        ifpath[i] = *r;
+        ifname[i] = *r;
+
+    return 0;
 }
 
-void get_vm_ipaddr(char *ipaddr, const char *vmhostname)
+/* 
+ * This function read IP info of VMs from "ETC_HOSTS", so set it appropriately
+ * before calling it. As is the common case, the line starts with "#" doesn't count
+ * return 0 in case of success(set ipaddr) and -1 in case of error(
+ * do nothing to ipaddr)
+ */
+int get_vm_ipaddr(char *ipaddr, const char *domname)
 {
     char buff[1024];
-    char name[32];
+    char name[DOMNAMEMAX];
     FILE *fp;
+    char iptmp[IPSZ];
+
     if (NULL == (fp = fopen(ETC_HOSTS, "r"))) {
         perror("fopen /etc/hosts");
         exit(errno);
     }
+
     memset(buff, '\0', sizeof(buff));
-    memset(hostname, '\0', sizeof(hostname));
-    while (fgets(buff, sizeof(buff), fp)) {
-        if (!strncmp(buff, "#", 1))
+    memset(name, '\0', sizeof(name));
+
+    while (NULL != fgets(buff, sizeof(buff), fp)) {
+        if (!strncmp(buff, "#", 1) || !strlen(buff)) {
+            memset(buff, '\0', sizeof(buff));
             continue;
-        ssanf(buff, "%s%s",ipaddr,  hostname);
-        if (strcmp(hostname, vmhostname)) {
-            
+        }
+        sscanf(buff, "%s%s",iptmp, name);
+        if (!strncmp(domname, name, sizeof(name))) {
+            //ipaddr = iptmp;
+            strncpy(ipaddr, iptmp, sizeof(iptmp));
+            break;
+        }
+        memset(buff, '\0', sizeof(buff));
     }
+
+    if (!strncmp(ipaddr, iptmp, sizeof(iptmp)))
+        return 0;
+    else
+        return -1;
 }
 
-/* 
- * get_vm_dominfo is responsible for getting static info of VMs, called once, 
- * and the info need not change
- */
-void get_vm_dominfo(struct virDomainPtr dp, struct vm_statistics *vm_stat)
+/* use libvirt API to get VM memory rss */
+void get_vm_rss(virDomainPtr dp, struct vm_statistics *vm_stat)
 {
-    int ret;
     int i;
+
     virDomainMemoryStatStruct stats[VIR_DOMAIN_MEMORY_STAT_NR];
     int nr_stats = virDomainMemoryStats(dp, stats, VIR_DOMAIN_MEMORY_STAT_NR, 0);
     if (nr_stats == -1) {
@@ -314,9 +355,66 @@ void get_vm_dominfo(struct virDomainPtr dp, struct vm_statistics *vm_stat)
             vm_stat->rss = stats[i].val;
             break;
         }
+}
+
+/* 
+ * get_vm_static_info is responsible for getting static info of VMs, called once, 
+ * and the info need not change vminfo->dp(gained by id) is already known, fill 
+ * up other fields of vminfo 
+ */
+void get_vm_static_info(struct vm_info *vminfo)
+{
+    int ret;
+    int i;
+
+    /* domname field */
+    vminfo->domname = virDomainGetName(vminfo->dp); 
+    if (NULL == vminfo->domname) {
+        fprintf(stderr, "failed to get hostname of domain with ID: %d\n", vminfo->id);
+        exit(VIR_ERR_UNKNOWN_HOST);
+    }
+
+    char *cap = (char *)malloc(sizeof(char) * DOMAIN_XML_SIZE);
+    /* get XML configuration of each VM */
+    cap = virDomainGetXMLDesc(vminfo->dp, VIR_DOMAIN_XML_UPDATE_CPU); 
+    if (NULL == cap) {
+        fprintf(stderr, "failed to get XMLDesc of domain: %s", vminfo->domname);
+        exit(VIR_ERR_XML_ERROR);
+    }
+
+    /* blkname field */
+    if (-1 == get_vm_blkname(cap, vminfo->blkname)) {
+        fprintf(stderr, "failed to get blkname of domain: %s", vminfo->domname);
+        exit(1);
+    }
+
+    /* ifname field */
+    if (-1 == get_vm_ifname(cap, vminfo->ifname)) {
+        fprintf(stderr, "failed to get ifname of domain: %s", vminfo->domname);
+        exit(1);
+    }
+
+    /* 
+     * read info from host /etc/hosts to get VMs' IPs, domain name must be known
+     * before this operation because we suppose the host administrator had written
+     * VMs' ip along with the domain name to /etc/hosts file
+     */
+    if (-1 == get_vm_ipaddr(vminfo->ipaddr, vminfo->domname)) {
+        fprintf(stderr, "WARNING: can't get IP address of domain[%s]", vminfo->domname);
+    }
+
+    /* fp filed */
+    create_vm_rst_file(vminfo);
+
+    free(cap);
+}
+
+void get_vm_cpustat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
+{
+    int ret; 
 
     virDomainInfoPtr dominfo = (virDomainInfoPtr)malloc(sizeof(virDomainInfo));
-    ret = virDomainGetInfo(dp, dominfo);
+    ret = virDomainGetInfo(vminfo->dp, dominfo);
     if (-1 == ret) {
         fprintf(stderr, "failed to get domaininfo of VMs\n");
         exit(VIR_FROM_DOM);
@@ -324,27 +422,74 @@ void get_vm_dominfo(struct virDomainPtr dp, struct vm_statistics *vm_stat)
     vm_stat->cpu_time = dominfo->cpuTime; /* in nanoseconds */
     vm_stat->maxmem = dominfo->maxMem;    /* in KiloBytes */
     vm_stat->curmem = dominfo->memory;    /* in KiloBytes */
+}
+
+void get_vm_memstat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
+{
+    int sockfd;
+    struct sockaddr_in servaddr;
+    int n, i;
+    uint32_t recvbuf[NR_MEMINFO];
+
+    /* socket */
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        fprintf(stderr, "socket error\n");
+        exit(errno);
+    }
+
+    /* initialize servaddr value of (sin_family, sin_port, sin_addr) */
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(L_PORT); /* port L_PORT is used by the server */
+    if (inet_pton(AF_INET, vminfo->ipaddr, &servaddr.sin_addr) <= 0) {
+        fprintf(stderr, "inet_pton error for %s", (strlen(vminfo->ipaddr) == 0) ? 
+                "(null)" : vminfo->ipaddr);
+        exit(errno);
+    }
+
+    /* connect */
+    if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        fprintf(stderr, "connect error\n");
+        exit(errno);
+    }
 
     /* 
-     * read info from host /etc/hosts to get VMs' IPs, domain name must be know
-     * before this operation because we suppose the host administrator had written
-     * VMs' ip along with the domain name to /etc/hosts file
+     * after calling connect successfully, the connection to server is established,
+     * we can operate on sockfd to get the information we want
      */
-    
+    if ((n = read(sockfd, recvbuf, sizeof(recvbuf))) > 0) {
+        /* change back to host byte order first */
+        for (i = 0; i < NR_MEMINFO; i++)
+            recvbuf[i] = ntohl(recvbuf[i]);
+        vm_stat->memtotal = recvbuf[MEMTOTAL];
+        vm_stat->memfree = recvbuf[MEMFREE];
+        vm_stat->buffers = recvbuf[BUFFERS];
+        vm_stat->cached = recvbuf[CACHED];
 
-    free(dominfo);
+       /* sscanf((char *)recvbuf, "%"PRIu32"%"PRIu32"%"PRIu32"%"PRIu32"", &vm_stat->memtotal, 
+                &vm_stat->memfree, &vm_stat->buffers, &vm_stat->cached); */
+        printf("%"PRIu32"\n%"PRIu32"\n%"PRIu32"\n%"PRIu32"\n", vm_stat->memtotal, 
+                vm_stat->memfree, vm_stat->buffers, vm_stat->cached);
+    }
+
 }
 
 void get_vm_blkstat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
 {
     int ret;
-    virDomainBlockStatsPtr blkstat = (virDomainBlockStatsPtr)malloc(sizeof(virDomainBlockStatsStruct));
+
+    virDomainBlockStatsPtr blkstat = 
+        (virDomainBlockStatsPtr)malloc(sizeof(virDomainBlockStatsStruct));
+
     ret = virDomainBlockStats(vminfo->dp, vminfo->blkname, 
             blkstat, sizeof(virDomainBlockStatsStruct));
+
     if (-1 == ret) {
-        fprintf(stderr, "failed to get domblkstats of VMs\n");
+        fprintf(stderr, "failed to get domblkstats of VM [%s]\n", vminfo->domname);
         exit(VIR_FROM_DOM);
     }
+
+    /* only need rd/wr bytes data for the moment */
     vm_stat->rd_bytes = blkstat->rd_bytes;
     vm_stat->wr_bytes = blkstat->wr_bytes;
 
@@ -354,13 +499,19 @@ void get_vm_blkstat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
 void get_vm_ifstat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
 {
     int ret;
-    virDomainInterfaceStatsPtr ifstat = (virDomainInterfaceStatsPtr)malloc(sizeof(virDomainInterfaceStatsStruct));
+
+    virDomainInterfaceStatsPtr ifstat = 
+        (virDomainInterfaceStatsPtr)malloc(sizeof(virDomainInterfaceStatsStruct));
+
     ret = virDomainInterfaceStats(vminfo->dp, vminfo->ifname, 
             ifstat, sizeof(virDomainInterfaceStatsStruct));
+
     if (-1 == ret) {
-        fprintf(stderr, "failed to get domifstats of VMs\n");
+        fprintf(stderr, "failed to get domifstats of VM [%s]\n", vminfo->domname);
         exit(VIR_FROM_DOM);
     }
+
+    /* only need rx/tx bytes for the moment */
     vm_stat->rx_bytes = ifstat->rx_bytes;
     vm_stat->tx_bytes = ifstat->tx_bytes;
 
@@ -373,7 +524,13 @@ void get_vm_workload(struct vm_statistics *vm_stat, struct vm_info *vminfo)
     int ret;
 
     /* get domaininfo of each active VM, including CPU and MEM infomation */
-    get_vm_dominfo(vm_stat, vminfo);
+    //get_vm_dominfo(vm_stat, vminfo);
+
+    /* get VM's cpu workload info */
+    get_vm_cpustat(vm_stat, vminfo);
+
+    /* get VM's memory workload info */
+    get_vm_memstat(vm_stat, vminfo);
 
     /* WARNING: suppose we have only 1 vdisk here */
     get_vm_blkstat(vm_stat, vminfo);
@@ -405,7 +562,8 @@ void calculate_vm_load(struct mach_load *vmload, struct vm_statistics *vm_stat_b
     /* (2). %MEM: use the rss size as the total used memory of VM */
     //vmload->mem_load = (vm_stat_after->rss) * 1.0 / total_mem * 100; 
     //vmload->mem_load = (vm_stat_after->curmem)  * 1.0 / total_mem * 100;
-    get_vm_percentage();
+    vmload->mem_load = 100 - (double)(vm_stat_after->memfree + vm_stat_after->buffers +
+            vm_stat_after->cached) / vm_stat_after->memtotal * 100.0;
 
     /* (3). vm disk read rate */
     vmload->rd_load = delta_rd_bytes * 1.0 / 1024 / microsec * 1000000;
@@ -426,11 +584,15 @@ void create_vm_rst_file(struct vm_info *vminfo)
     int domname_length = strlen(vminfo->domname);
     int fname_length = domname_length + strlen(suffix) + 1;
     char *fname = (char *)malloc(sizeof(char) * fname_length);
+
     memset(fname, '\0', fname_length);
     strncpy(fname, vminfo->domname, strlen(vminfo->domname));
     strncat(fname, suffix, strlen(suffix));
     vminfo->fp = fopen(fname, "w");
+
+    /* set line buffer here */
     setlinebuf(vminfo->fp);
+
     if (NULL == vminfo->fp) {
         fprintf(stderr, "failed to create result file %s [%s]\n", fname, strerror(errno));
         exit(errno);
@@ -512,7 +674,7 @@ void extract_nic_bytes(char *buffer, ull *rx_bytes, ull *tx_bytes)
 /* 
  * get cpu info from /proc/stat
  */
-void get_phy_cpu_stat(struct phy_statistics *phy_stat)
+void get_phy_cpustat(struct phy_statistics *phy_stat)
 {
     char line[8192];
     FILE *fp = fopen("/proc/stat", "r");
@@ -542,7 +704,7 @@ void get_phy_cpu_stat(struct phy_statistics *phy_stat)
     fclose(fp);
 }
 
-void get_phy_mem_stat(struct phy_statistics *phy_stat)
+void get_phy_memstat(struct phy_statistics *phy_stat)
 {
     int i;
     FILE *fp = NULL;
@@ -563,7 +725,7 @@ void get_phy_mem_stat(struct phy_statistics *phy_stat)
 /*
  * user must handle errors by themselves
  */
-void get_phy_disk_stat(struct phy_statistics *phy_stat, const char *disk)
+void get_phy_blkstat(struct phy_statistics *phy_stat, const char *disk)
 {
     char buf[100] = {'\0'};
     char device[20] = {'\0'};
@@ -575,7 +737,8 @@ void get_phy_disk_stat(struct phy_statistics *phy_stat, const char *disk)
     while (fgets(buf, sizeof(buf), fp)) {
         sscanf(buf, "%*d %*d %s", device);
         if (0 == strcmp(disk, device)) {
-            sscanf(buf, "%*u %*u %*s %*u %*u %Lu %*u %*d %Lu", &phy_stat->rd_sectors, &phy_stat->wr_sectors);
+            sscanf(buf, "%*u %*u %*s %*u %*u %Lu %*u %*d %Lu", 
+                    &phy_stat->rd_sectors, &phy_stat->wr_sectors);
             break;
         }
         memset(device, '\0', sizeof(device));
@@ -585,7 +748,7 @@ void get_phy_disk_stat(struct phy_statistics *phy_stat, const char *disk)
     fclose(fp);
 }
 
-void get_phy_net_stat(struct phy_statistics *phy_stat, const char *nic)
+void get_phy_ifstat(struct phy_statistics *phy_stat, const char *nic)
 {
     char buf[1024] = {'\0'};
     char device[20] = {'\0'}; 
@@ -619,16 +782,16 @@ void get_phy_workload(struct phy_statistics *phy_stat)
     char *nic = ETHERNET;
 
     /* get physical cpu statistics */
-    get_phy_cpu_stat(phy_stat);
+    get_phy_cpustat(phy_stat);
 
     /* get physical memory statistics */
-    get_phy_mem_stat(phy_stat);
+    get_phy_memstat(phy_stat);
 
     /* get physical disk statistics */
-    get_phy_disk_stat(phy_stat, disk);
+    get_phy_blkstat(phy_stat, disk);
 
     /* get physical network statistics */
-    get_phy_net_stat(phy_stat, nic);
+    get_phy_ifstat(phy_stat, nic);
 }
 
 /* sum up user+nice+sys+iowait+idle+irq+softirq+steal, precluding guest and guest_nice */
@@ -742,43 +905,31 @@ int main(int argc, char **argv)
             fprintf(stderr, "failed to get the domain instance with ID: %d\n", vminfo[i].id);
             exit(VIR_ERR_INVALID_DOMAIN);
         }
-
-        vminfo[i].domname = virDomainGetName(vminfo[i].dp); //
-        if (NULL == vminfo[i].domname) {
-            fprintf(stderr, "failed to get hostname of domain with ID: %d\n", vminfo[i].id);
-            exit(VIR_ERR_UNKNOWN_HOST);
-        }
-
-        char *cap = (char *)malloc(sizeof(char) * DOMAIN_XML_SIZE);
-        /* get XML configuration of each VM */
-        cap = virDomainGetXMLDesc(vminfo[i].dp, VIR_DOMAIN_XML_UPDATE_CPU); 
-        if (NULL == cap) {
-            fprintf(stderr, "failed to get XMLDesc of domain: %s", vminfo[i].domname);
-            exit(VIR_ERR_XML_ERROR);
-        }
-        /* get block statistics information of each VM */
-        get_vm_blkpath(cap, vminfo[i].blkname); //
-        get_vm_ifpath(cap, vminfo[i].ifname) ;  //
-        free(cap);
-        create_vm_rst_file(&vminfo[i]);
+        get_vm_static_info(&vminfo[i]);
         //print_vm_info(&vminfo[i]);
     }
 
     struct timeval *tv_before = (struct timeval *)malloc(sizeof(struct timeval));
     struct timeval *tv_after = (struct timeval *)malloc(sizeof(struct timeval));
+
     struct vm_statistics *vm_stat_before = 
         (struct vm_statistics *)malloc(sizeof(struct vm_statistics) * active_domain_num);
+
     struct vm_statistics *vm_stat_after = 
         (struct vm_statistics *)malloc(sizeof(struct vm_statistics) * active_domain_num);
+
     struct mach_load *vm_sysload = (struct mach_load *)malloc(sizeof(struct mach_load) * active_domain_num);
 
     struct phy_statistics *phy_stat_before = 
         (struct phy_statistics *)malloc(sizeof(struct phy_statistics));
+
     struct phy_statistics *phy_stat_after = 
         (struct phy_statistics *)malloc(sizeof(struct phy_statistics));
+
     struct mach_load *phy_sysload = (struct mach_load *)malloc(sizeof(struct mach_load));
 
     while (1) {
+
         index++;
         curtime = time((time_t *)NULL);
 
@@ -800,19 +951,27 @@ int main(int argc, char **argv)
             get_vm_workload(&vm_stat_after[i], &vminfo[i]);
         }
         get_phy_workload(phy_stat_after);
+
         /* elaspsed time in microsecond */
-        long elapsed_time = (tv_after->tv_sec - tv_before->tv_sec) * 1000000 + (tv_after->tv_usec - tv_before->tv_usec);
+        long elapsed_time = (tv_after->tv_sec - tv_before->tv_sec) * 1000000 + 
+            (tv_after->tv_usec - tv_before->tv_usec);
+
         for (i = 0; i < active_domain_num; i++) {
-            calculate_vm_load(&vm_sysload[i], &vm_stat_before[i], &vm_stat_after[i], elapsed_time, nodeinfo->memory);
+            calculate_vm_load(&vm_sysload[i], &vm_stat_before[i], 
+                    &vm_stat_after[i], elapsed_time, nodeinfo->memory);
             /* TODO: flush the buffer when program exits abnormally using signal processing */
-            fprintf(vminfo[i].fp, "%-6ld %-6ld %-6.2lf %-6.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf\n", 
-                    (long)curtime, index, vm_sysload[i].cpu_load, vm_sysload[i].mem_load, 
-                    vm_sysload[i].rd_load, vm_sysload[i].wr_load, vm_sysload[i].rx_load, vm_sysload[i].tx_load);
+            fprintf(vminfo[i].fp, FORMATS, 
+                    (long)curtime, index, vm_sysload[i].cpu_load, 
+                    vm_sysload[i].mem_load, vm_sysload[i].rd_load, 
+                    vm_sysload[i].wr_load, vm_sysload[i].rx_load, 
+                    vm_sysload[i].tx_load);
         }
         calculate_phy_load(phy_sysload, phy_stat_before, phy_stat_after, elapsed_time);
-        fprintf(phyinfo->fp, "%-6ld %-6ld %-6.2lf %-6.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf\n",
-                    (long)curtime, index, phy_sysload->cpu_load, phy_sysload->mem_load, 
-                    phy_sysload->rd_load, phy_sysload->wr_load, phy_sysload->rx_load, phy_sysload->tx_load);
+        fprintf(phyinfo->fp, FORMATS, 
+                    (long)curtime, index, phy_sysload->cpu_load, 
+                    phy_sysload->mem_load, phy_sysload->rd_load, 
+                    phy_sysload->wr_load, phy_sysload->rx_load, 
+                    phy_sysload->tx_load);
     }
 
     /* free all the VM instances */
