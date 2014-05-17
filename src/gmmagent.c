@@ -193,11 +193,11 @@ int main(int argc, char **argv)
         transbuf[BUFFERS] = htonl(minfo.buffers);
         transbuf[CACHED] = htonl(minfo.cached);
         for (i = 0; i < NR_MEMINFO; i++)
-            printf("%"PRIu32"\n", transbuf[i]);  // transbuf is in network byte order
+            printf("%"PRIu32"\n", transbuf[i]);  /* transbuf is in network byte order */
 
         printf("writing: %"PRIu32", %"PRIu32", %"PRIu32", %"PRIu32"\n", minfo.memtotal, minfo.memfree, 
                 minfo.buffers, minfo.cached);
-        //float mem_percentage = get_mem_usage(&minfo);
+        /* float mem_percentage = get_mem_usage(&minfo); */
         write(connfd, transbuf, sizeof(transbuf));
 
         close(connfd);
