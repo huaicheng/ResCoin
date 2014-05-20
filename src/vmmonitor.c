@@ -29,11 +29,13 @@
 #define DOMNAMEMAX      64
 #define IPSZ            16
 #define ETC_HOSTS       "/etc/hosts"
-#define FORMATS         "%-6ld %-6ld %-6.2lf %-6.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf\n"
+#define FORMATS \
+        "%-6ld %-6ld %-6.2lf %-6.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf\n"
 
 char *hypervisor = "qemu:///system";
 int active_domain_num = 0;
-int nr_cores = 1;    /* by default, we suppose there is only one core in the host */
+/* by default, we suppose there is only one core in the host */
+int nr_cores = 1; 
 
 struct vm_ipaddr_name_list 
 {
@@ -190,7 +192,7 @@ typedef struct mach_load {
 
 
 
-void create_vm_rst_file(struct vm_info *vminfo);
+int create_vm_rst_file(struct vm_info *vminfo);
 
 
 /*
@@ -210,7 +212,8 @@ void init_vm_info(struct vm_info *vminfo)
 void init_phy_info(struct phy_info *phyinfo)
 {
     phyinfo->hostname_length = 20;
-    phyinfo->hostname = (char *)malloc(sizeof(char) * phyinfo->hostname_length);
+    phyinfo->hostname = 
+        (char *)malloc(sizeof(char) * phyinfo->hostname_length);
     memset(phyinfo->hostname, '\0', phyinfo->hostname_length);
     phyinfo->fp = NULL;
 }
@@ -222,20 +225,24 @@ void print_vm_info(struct vm_info *vminfo)
 {
     printf("%-4s | %-10s | %-8s | %-50s | %-8s | %-10s\n", 
             "ID", "domain", "name", "blkname", "ifname", "FILE *fp");
-    printf("%-4d | %-10p | %-8s | %-50s | %-8s | %-10p\n", vminfo->id, vminfo->dp, 
-            vminfo->domname, vminfo->blkname, vminfo->ifname, vminfo->fp);
+    printf("%-4d | %-10p | %-8s | %-50s | %-8s | %-10p\n", 
+            vminfo->id, vminfo->dp, vminfo->domname, vminfo->blkname, 
+            vminfo->ifname, vminfo->fp);
 }
 
 /*
  * print vm statistics
  */
-void print_vm_statistics(struct vm_statistics *vm_stat, struct vm_info *vminfo)
+void print_vm_statistics(struct vm_statistics *vm_stat, 
+                         struct vm_info *vminfo)
 {
-    printf("%-8s: %-20s %-8s %-8s %-12s %-12s %-12s %-12s\n", "domname", "cpu_time", 
-            "maxmem", "curmem", "rd_bytes", "wr_bytes", "rx_bytes", "tx_bytes");
-    printf("%-8s: %-20lld %-8ld %-8ld %-12lld %-12lld %-12lld %-12lld\n", vminfo->domname,
-            vm_stat->cpu_time, vm_stat->maxmem, vm_stat->curmem, 
-            vm_stat->rd_bytes, vm_stat->wr_bytes, vm_stat->rx_bytes, vm_stat->tx_bytes);
+    printf("%-8s: %-20s %-8s %-8s %-12s %-12s %-12s %-12s\n", 
+            "domname", "cpu_time", "maxmem", "curmem", 
+            "rd_bytes", "wr_bytes", "rx_bytes", "tx_bytes");
+    printf("%-8s: %-20lld %-8ld %-8ld %-12lld %-12lld %-12lld %-12lld\n", 
+            vminfo->domname, vm_stat->cpu_time, vm_stat->maxmem, 
+            vm_stat->curmem, vm_stat->rd_bytes, vm_stat->wr_bytes, 
+            vm_stat->rx_bytes, vm_stat->tx_bytes);
 }
 
 /* 
@@ -243,8 +250,10 @@ void print_vm_statistics(struct vm_statistics *vm_stat, struct vm_info *vminfo)
  */
 void print_mach_load(struct mach_load *vmload)
 {
-    printf("%-6.2lf %-6.2lf %-8.2lf %-8.2lf %-8.2lf %-8.2lf\n", vmload->cpu_load, vmload->mem_load,
-            vmload->rd_load, vmload->wr_load, vmload->rx_load, vmload->tx_load);
+    printf("%-6.2lf %-6.2lf %-8.2lf %-8.2lf %-8.2lf %-8.2lf\n", 
+            vmload->cpu_load, vmload->mem_load,
+            vmload->rd_load, vmload->wr_load, vmload->rx_load, 
+            vmload->tx_load);
 }
 
 /* 
@@ -280,7 +289,8 @@ int get_vm_blkname(const char *xml, char *blkname)
 
 /* 
  * match the "vnet" field to get the PATH of the virtual interface 
- * WARNING: currently, only consider the ONLY ONE virtual interface situation here
+ * WARNING: currently, only consider the ONLY ONE virtual interface 
+ * situation here
  */
 int get_vm_ifname(char *xml, char *ifname)
 {
@@ -300,9 +310,9 @@ int get_vm_ifname(char *xml, char *ifname)
 
 /* 
  * This function read IP info of VMs from "ETC_HOSTS", so set it appropriately
- * before calling it. As is the common case, the line starts with "#" doesn't count
- * return 0 in case of success(set ipaddr) and -1 in case of error(
- * do nothing to ipaddr)
+ * before calling it. As is the common case, the line starts with "#" doesn't 
+ * count return 0 in case of success(set ipaddr) and -1 in case of error(do 
+ * nothing to ipaddr)
  */
 int get_vm_ipaddr(char *ipaddr, const char *domname)
 {
@@ -345,7 +355,8 @@ void get_vm_rss(virDomainPtr dp, struct vm_statistics *vm_stat)
     int i;
 
     virDomainMemoryStatStruct stats[VIR_DOMAIN_MEMORY_STAT_NR];
-    int nr_stats = virDomainMemoryStats(dp, stats, VIR_DOMAIN_MEMORY_STAT_NR, 0);
+    int nr_stats = 
+        virDomainMemoryStats(dp, stats, VIR_DOMAIN_MEMORY_STAT_NR, 0);
     if (nr_stats == -1) {
         fprintf(stderr, "Failed to get VM memory statistics for");
         exit(errno);
@@ -358,9 +369,9 @@ void get_vm_rss(virDomainPtr dp, struct vm_statistics *vm_stat)
 }
 
 /* 
- * get_vm_static_info is responsible for getting static info of VMs, called once, 
- * and the info need not change vminfo->dp(gained by id) is already known, fill 
- * up other fields of vminfo 
+ * get_vm_static_info is responsible for getting static info of VMs, 
+ * called once, and the info need not change vminfo->dp(gained by id) 
+ * is already known, fill up other fields of vminfo 
  */
 void get_vm_static_info(struct vm_info *vminfo)
 {
@@ -370,7 +381,8 @@ void get_vm_static_info(struct vm_info *vminfo)
     /* domname field */
     vminfo->domname = virDomainGetName(vminfo->dp); 
     if (NULL == vminfo->domname) {
-        fprintf(stderr, "failed to get hostname of domain with ID: %d\n", vminfo->id);
+        fprintf(stderr, "failed to get hostname of domain with ID: %d\n", 
+                vminfo->id);
         exit(VIR_ERR_UNKNOWN_HOST);
     }
 
@@ -378,33 +390,42 @@ void get_vm_static_info(struct vm_info *vminfo)
     /* get XML configuration of each VM */
     cap = virDomainGetXMLDesc(vminfo->dp, VIR_DOMAIN_XML_UPDATE_CPU); 
     if (NULL == cap) {
-        fprintf(stderr, "failed to get XMLDesc of domain: %s", vminfo->domname);
+        fprintf(stderr, "failed to get XMLDesc of domain: %s", 
+                vminfo->domname);
         exit(VIR_ERR_XML_ERROR);
     }
 
     /* blkname field */
     if (-1 == get_vm_blkname(cap, vminfo->blkname)) {
-        fprintf(stderr, "failed to get blkname of domain: %s", vminfo->domname);
+        fprintf(stderr, "failed to get blkname of domain: %s", 
+                vminfo->domname);
         exit(1);
     }
 
     /* ifname field */
     if (-1 == get_vm_ifname(cap, vminfo->ifname)) {
-        fprintf(stderr, "failed to get ifname of domain: %s", vminfo->domname);
+        fprintf(stderr, "failed to get ifname of domain: %s", 
+                vminfo->domname);
         exit(1);
     }
 
     /* 
-     * read info from host /etc/hosts to get VMs' IPs, domain name must be known
-     * before this operation because we suppose the host administrator had written
-     * VMs' ip along with the domain name to /etc/hosts file
+     * read info from host /etc/hosts to get VMs' IPs, domain name must be 
+     * known before this operation because we suppose the host administrator 
+     * had written VMs' ip along with the domain name to /etc/hosts file
      */
     if (-1 == get_vm_ipaddr(vminfo->ipaddr, vminfo->domname)) {
-        fprintf(stderr, "WARNING: can't get IP address of domain[%s]", vminfo->domname);
+        fprintf(stderr, "WARNING: can't get IP address of domain[%s]", 
+                vminfo->domname);
+        exit(1);
     }
 
     /* fp filed */
-    create_vm_rst_file(vminfo);
+    if (-1 == create_vm_rst_file(vminfo)) {
+        fprintf(stderr, "can't create result file for domain[%s]", 
+                vminfo->domname);
+        exit(1);
+    }
 
     free(cap);
 }
@@ -424,6 +445,10 @@ void get_vm_cpustat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
     vm_stat->curmem = dominfo->memory;    /* in KiloBytes */
 }
 
+/*
+ * At each calling, the function connects to the guest agent(server) to gain
+ * guest's memory usage through socket and then store the info.
+ */
 void get_vm_memstat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
 {
     int sockfd;
@@ -454,8 +479,8 @@ void get_vm_memstat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
     }
 
     /* 
-     * after calling connect successfully, the connection to server is established,
-     * we can operate on sockfd to get the information we want
+     * after calling connect successfully, the connection to server is 
+     * established, we can operate on sockfd to get the information we want
      */
     if ((n = read(sockfd, recvbuf, sizeof(recvbuf))) > 0) {
         /* change back to host byte order first */
@@ -466,10 +491,12 @@ void get_vm_memstat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
         vm_stat->buffers = recvbuf[BUFFERS];
         vm_stat->cached = recvbuf[CACHED];
 
-       /* sscanf((char *)recvbuf, "%"PRIu32"%"PRIu32"%"PRIu32"%"PRIu32"", &vm_stat->memtotal, 
-                &vm_stat->memfree, &vm_stat->buffers, &vm_stat->cached); */
-        printf("%"PRIu32"\n%"PRIu32"\n%"PRIu32"\n%"PRIu32"\n", vm_stat->memtotal, 
-                vm_stat->memfree, vm_stat->buffers, vm_stat->cached);
+       /* sscanf((char *)recvbuf, "%"PRIu32"%"PRIu32"%"PRIu32"%"PRIu32"", 
+        *   &vm_stat->memtotal, &vm_stat->memfree, 
+        *   &vm_stat->buffers, &vm_stat->cached); */
+        printf("%"PRIu32"\n%"PRIu32"\n%"PRIu32"\n%"PRIu32"\n", 
+                vm_stat->memtotal, vm_stat->memfree, 
+                vm_stat->buffers, vm_stat->cached);
     }
 
 }
@@ -485,7 +512,8 @@ void get_vm_blkstat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
             blkstat, sizeof(virDomainBlockStatsStruct));
 
     if (-1 == ret) {
-        fprintf(stderr, "failed to get domblkstats of VM [%s]\n", vminfo->domname);
+        fprintf(stderr, "failed to get domblkstats of VM [%s]\n", 
+                vminfo->domname);
         exit(VIR_FROM_DOM);
     }
 
@@ -507,7 +535,8 @@ void get_vm_ifstat(struct vm_statistics *vm_stat, struct vm_info *vminfo)
             ifstat, sizeof(virDomainInterfaceStatsStruct));
 
     if (-1 == ret) {
-        fprintf(stderr, "failed to get domifstats of VM [%s]\n", vminfo->domname);
+        fprintf(stderr, "failed to get domifstats of VM [%s]\n", 
+                vminfo->domname);
         exit(VIR_FROM_DOM);
     }
 
@@ -541,8 +570,10 @@ void get_vm_workload(struct vm_statistics *vm_stat, struct vm_info *vminfo)
     //print_vm_statistics(vm_stat, vminfo);
 }
 
-void calculate_vm_load(struct mach_load *vmload, struct vm_statistics *vm_stat_before, 
-        struct vm_statistics *vm_stat_after, ull microsec, unsigned long total_mem)
+void compute_vm_load(struct mach_load *vmload, 
+        struct vm_statistics *vm_stat_before, 
+        struct vm_statistics *vm_stat_after, 
+        ull microsec, unsigned long total_mem)
 {
 
     ull delta_cpu_time = vm_stat_after->cpu_time - vm_stat_before->cpu_time;
@@ -551,19 +582,24 @@ void calculate_vm_load(struct mach_load *vmload, struct vm_statistics *vm_stat_b
     ull delta_rx_bytes = vm_stat_after->rx_bytes - vm_stat_before->rx_bytes;
     ull delta_tx_bytes = vm_stat_after->tx_bytes - vm_stat_before->tx_bytes;
 
-    /* calculate the corresponding workload of each VM using the monitored statistics data */
+    /* 
+     * calculate the corresponding workload of each VM 
+     * using the monitored statistics data 
+     */
 
     /* 
      * (1). %CPU = 100 × delta_cpu_time / (time × nr_cores × 10^9) 
-     * delta_cpu_time represent time differences domain get to run during time "time"
+     * delta_cpu_time represent time differences domain get to run 
+     * during time "time"
      */
     vmload->cpu_load = delta_cpu_time * 1.0 / 1000 / microsec * 100 / nr_cores;  
 
     /* (2). %MEM: use the rss size as the total used memory of VM */
     //vmload->mem_load = (vm_stat_after->rss) * 1.0 / total_mem * 100; 
     //vmload->mem_load = (vm_stat_after->curmem)  * 1.0 / total_mem * 100;
-    vmload->mem_load = 100 - (double)(vm_stat_after->memfree + vm_stat_after->buffers +
-            vm_stat_after->cached) / vm_stat_after->memtotal * 100.0;
+    vmload->mem_load = 
+        100 - (double)(vm_stat_after->memfree + vm_stat_after->buffers +
+        vm_stat_after->cached) / vm_stat_after->memtotal * 100.0;
 
     /* (3). vm disk read rate */
     vmload->rd_load = delta_rd_bytes * 1.0 / 1024 / microsec * 1000000;
@@ -578,7 +614,7 @@ void calculate_vm_load(struct mach_load *vmload, struct vm_statistics *vm_stat_b
     vmload->tx_load = delta_tx_bytes * 1.0 / 1024 / microsec * 1000000;
 }
 
-void create_vm_rst_file(struct vm_info *vminfo)
+int create_vm_rst_file(struct vm_info *vminfo)
 {
     const char *suffix = ".rst";
     int domname_length = strlen(vminfo->domname);
@@ -594,11 +630,14 @@ void create_vm_rst_file(struct vm_info *vminfo)
     setlinebuf(vminfo->fp);
 
     if (NULL == vminfo->fp) {
-        fprintf(stderr, "failed to create result file %s [%s]\n", fname, strerror(errno));
-        exit(errno);
+        fprintf(stderr, "failed to create result file %s [%s]\n", 
+                fname, strerror(errno));
+        return -1;
     }
 
     free(fname);
+    
+    return 0;
 }
 
 void create_phy_rst_file(struct phy_info *phyinfo)
@@ -614,7 +653,8 @@ void create_phy_rst_file(struct phy_info *phyinfo)
     phyinfo->fp = fopen(fname, "w");
     setlinebuf(phyinfo->fp);
     if (NULL == phyinfo->fp) {
-        fprintf(stderr, "failed to create result file %s [%s]\n", fname, strerror(errno));
+        fprintf(stderr, "failed to create result file %s [%s]\n", 
+                fname, strerror(errno));
         exit(errno);
     }
 }
@@ -651,12 +691,16 @@ void extract_nic_bytes(char *buffer, ull *rx_bytes, ull *tx_bytes)
     for (i = 0; i < buf_size; i++)
         if (buffer[i] == ':')
             break;
-    /* do no more checking here for the noexistence situation of wrong ethernet line */
+    /* 
+     * do no more checking here for the noexistence situation of wrong 
+     * ethernet line 
+     */
     i++;
     if (buffer[i] != ' ')
         has_space = 0;
     if (has_space) {
-        sscanf(buffer, "%*s %lld %*d %*d %*d %*d %*d %*d %*d %lld", rx_bytes, tx_bytes);
+        sscanf(buffer, "%*s %lld %*d %*d %*d %*d %*d %*d %*d %lld", 
+                rx_bytes, tx_bytes);
     }
     else {
         k = 0;
@@ -685,7 +729,8 @@ void get_phy_cpustat(struct phy_statistics *phy_stat)
 
     memset(line, 0, 8192);
     if (NULL == fgets(line, sizeof(line), fp)) {
-        fprintf(stderr, "failed to read info from /proc/stat [%s]\n", strerror(errno));
+        fprintf(stderr, "failed to read info from /proc/stat [%s]\n", 
+                strerror(errno));
         exit(errno);
     }
 
@@ -717,8 +762,9 @@ void get_phy_memstat(struct phy_statistics *phy_stat)
         fprintf(stderr, "failed to open /proc/meminfo [%s]\n", strerror(errno));
         exit(errno);
     }
-    fscanf(fp, "%*s %ld %*s\n%*s %ld %*s\n%*s %ld %*s\n%*s %ld", &phy_stat->memtotal, 
-            &phy_stat->memfree, &phy_stat->buffers, &phy_stat->cached);
+    fscanf(fp, "%*s %ld %*s\n%*s %ld %*s\n%*s %ld %*s\n%*s %ld", 
+            &phy_stat->memtotal, &phy_stat->memfree, &phy_stat->buffers, 
+            &phy_stat->cached);
     fclose(fp);
 }
 
@@ -731,7 +777,7 @@ void get_phy_blkstat(struct phy_statistics *phy_stat, const char *disk)
     char device[20] = {'\0'};
     FILE *fp = fopen("/proc/diskstats", "r");
     if (NULL == fp) {
-        fprintf(stderr, "faild to open /proc/diskstats [%s]\n", strerror(errno));
+        fprintf(stderr, "faild to open /proc/diskstats[%s]\n", strerror(errno));
         exit(errno);
     }
     while (fgets(buf, sizeof(buf), fp)) {
@@ -767,7 +813,8 @@ void get_phy_ifstat(struct phy_statistics *phy_stat, const char *nic)
         memset(buf, '\0', sizeof(buf));
     }
     if (match == 0) {
-        fprintf(stderr, "couldn't resolve [%s] in /proc/net/dev, make sure you have the NIC\n", ETHERNET);
+        fprintf(stderr, "couldn't resolve [%s] in /proc/net/dev, "
+                "make sure you have the NIC\n", ETHERNET);
         exit(errno);
     }
     //printf("%s\n", buf);
@@ -794,7 +841,10 @@ void get_phy_workload(struct phy_statistics *phy_stat)
     get_phy_ifstat(phy_stat, nic);
 }
 
-/* sum up user+nice+sys+iowait+idle+irq+softirq+steal, precluding guest and guest_nice */
+/* 
+ * sum up user+nice+sys+iowait+idle+irq+softirq+steal, 
+ * precluding guest and guest_nice 
+ */
 ull sum_cpu_stats(struct phy_statistics *phy_stats)
 {
     ull cpu_ticks = 
@@ -814,47 +864,76 @@ ull sum_cpu_stats(struct phy_statistics *phy_stats)
 /*
  * caculate physical machine's workload
  */
-void calculate_phy_load(struct mach_load *phyload, struct phy_statistics *phy_stat_before, 
-        struct phy_statistics *phy_stat_after, long microsec)
+void compute_phy_load(struct mach_load *phyload, 
+        struct phy_statistics *phy_stat_before, 
+        struct phy_statistics *phy_stat_after, 
+        long microsec)
 {
     ull cpu_ticks_before = sum_cpu_stats(phy_stat_before);
     ull cpu_ticks_after = sum_cpu_stats(phy_stat_after);
 
-    /* total elapsed cpu time in ticks, equavelent to the difference of gettimeofday */
+    /* 
+     * total elapsed cpu time in ticks, equavelent to the difference 
+     * of gettimeofday 
+     */
     ull delta_cpu_time = cpu_ticks_after - cpu_ticks_before; 
     ull delta_idle_time = phy_stat_after->idle - phy_stat_before->idle;
 
     /* get memory unused(including the "free+buffers+cached" */
-    unsigned long mem_unused = phy_stat_after->memfree + phy_stat_after->buffers + phy_stat_after->cached;
+    unsigned long mem_unused = phy_stat_after->memfree + 
+        phy_stat_after->buffers + phy_stat_after->cached;
 
-    ull delta_rd_bytes = (phy_stat_after->rd_sectors - phy_stat_before->rd_sectors) * 512;
-    ull delta_wr_bytes = (phy_stat_after->wr_sectors - phy_stat_before->wr_sectors) * 512;
+    ull delta_rd_bytes = 
+        (phy_stat_after->rd_sectors - phy_stat_before->rd_sectors) * 512;
+    ull delta_wr_bytes = 
+        (phy_stat_after->wr_sectors - phy_stat_before->wr_sectors) * 512;
 
     ull delta_rx_bytes = phy_stat_after->rx_bytes - phy_stat_before->rx_bytes;
     ull delta_tx_bytes = phy_stat_after->tx_bytes - phy_stat_before->tx_bytes;
 
-    /* calculate the corresponding workload of each VM using the monitored statistics data */
+    /* 
+     * calculate the corresponding workload of each VM 
+     * using the monitored statistics data 
+     */
 
-    /* (1) CPU%: we take non-idle cpu time as the time cpu busying running tasks */
-    phyload->cpu_load = 100 - delta_idle_time * 1.0 / delta_cpu_time * 100; /* 1~100(%) */
+    /* 
+     * (1) CPU%: we take non-idle cpu time as the time cpu 
+     *  busying running tasks  
+     *  [1~100(%)]
+     */
+    phyload->cpu_load = 100 - delta_idle_time * 1.0 / delta_cpu_time * 100; 
 
-    /* (2) MEM%: get the memory usage at the time poniter */
-    phyload->mem_load = 100 - mem_unused * 1.0 / phy_stat_after->memtotal * 100; /* 1~100(%) */
+    /* 
+     * (2) MEM%: get the memory usage at the time poniter 
+     *  [1~100(%)]
+     */
+    phyload->mem_load = 
+        100 - mem_unused * 1.0 / phy_stat_after->memtotal * 100; 
 
-    /* (3) DISK read rate */
-    phyload->rd_load = delta_rd_bytes * 1.0 / 1024 / microsec * 1000000; /* in Kbps */
+    /* 
+     * (3) DISK read rate
+     *  [in Kbps]
+     */
+    phyload->rd_load = delta_rd_bytes * 1.0 / 1024 / microsec * 1000000; 
 
-    /* (4) DISK write rate */
-    phyload->wr_load = delta_wr_bytes * 1.0 / 1024 / microsec * 1000000; /* in Kbps */
+    /* 
+     * (4) DISK write rate 
+     *  [in Kbps]
+     */
+    phyload->wr_load = delta_wr_bytes * 1.0 / 1024 / microsec * 1000000; 
 
-    /* (5) NET rx rate */
-    phyload->rx_load = delta_rx_bytes * 1.0 / 1024 / microsec * 1000000; /* in Kbps */
+    /* 
+     * (5) NET rx rate 
+     *  [in Kbps]
+     */
+    phyload->rx_load = delta_rx_bytes * 1.0 / 1024 / microsec * 1000000; 
 
-    /* (6) NET tx rate */
-    phyload->tx_load = delta_tx_bytes * 1.0 / 1024 / microsec * 1000000; /* in Kbps */
+    /* 
+     * (6) NET tx rate 
+     *  [in Kbps]
+     */
+    phyload->tx_load = delta_tx_bytes * 1.0 / 1024 / microsec * 1000000; 
 }
-
-
 
 int main(int argc, char **argv)
 {
@@ -888,8 +967,10 @@ int main(int argc, char **argv)
     }
 
     /* store all VM information obtained to struct vm_info */
-    struct vm_info *vminfo = (struct vm_info *)malloc(sizeof(struct vm_info) * active_domain_num);
-    struct phy_info *phyinfo = (struct phy_info *)malloc(sizeof(struct phy_info) * 1);
+    struct vm_info *vminfo = 
+        (struct vm_info *)malloc(sizeof(struct vm_info) * active_domain_num);
+    struct phy_info *phyinfo = 
+        (struct phy_info *)malloc(sizeof(struct phy_info) * 1);
 
     init_phy_info(phyinfo);
     create_phy_rst_file(phyinfo);
@@ -902,23 +983,27 @@ int main(int argc, char **argv)
 
         vminfo[i].dp = virDomainLookupByID(conn, vminfo[i].id); //
         if (NULL == vminfo[i].dp) {
-            fprintf(stderr, "failed to get the domain instance with ID: %d\n", vminfo[i].id);
+            fprintf(stderr, "failed to get the domain instance with ID: %d\n", 
+                    vminfo[i].id);
             exit(VIR_ERR_INVALID_DOMAIN);
         }
         get_vm_static_info(&vminfo[i]);
         //print_vm_info(&vminfo[i]);
     }
 
-    struct timeval *tv_before = (struct timeval *)malloc(sizeof(struct timeval));
-    struct timeval *tv_after = (struct timeval *)malloc(sizeof(struct timeval));
+    struct timeval *tv_before = 
+        (struct timeval *)malloc(sizeof(struct timeval));
+    struct timeval *tv_after = 
+        (struct timeval *)malloc(sizeof(struct timeval));
 
-    struct vm_statistics *vm_stat_before = 
-        (struct vm_statistics *)malloc(sizeof(struct vm_statistics) * active_domain_num);
+    struct vm_statistics *vm_stat_before = (struct vm_statistics *)
+        malloc(sizeof(struct vm_statistics) * active_domain_num);
 
-    struct vm_statistics *vm_stat_after = 
-        (struct vm_statistics *)malloc(sizeof(struct vm_statistics) * active_domain_num);
+    struct vm_statistics *vm_stat_after = (struct vm_statistics *)
+        malloc(sizeof(struct vm_statistics) * active_domain_num);
 
-    struct mach_load *vm_sysload = (struct mach_load *)malloc(sizeof(struct mach_load) * active_domain_num);
+    struct mach_load *vm_sysload = (struct mach_load *)
+        malloc(sizeof(struct mach_load) * active_domain_num);
 
     struct phy_statistics *phy_stat_before = 
         (struct phy_statistics *)malloc(sizeof(struct phy_statistics));
@@ -926,7 +1011,8 @@ int main(int argc, char **argv)
     struct phy_statistics *phy_stat_after = 
         (struct phy_statistics *)malloc(sizeof(struct phy_statistics));
 
-    struct mach_load *phy_sysload = (struct mach_load *)malloc(sizeof(struct mach_load));
+    struct mach_load *phy_sysload = 
+        (struct mach_load *)malloc(sizeof(struct mach_load));
 
     while (1) {
 
@@ -957,21 +1043,29 @@ int main(int argc, char **argv)
             (tv_after->tv_usec - tv_before->tv_usec);
 
         for (i = 0; i < active_domain_num; i++) {
-            calculate_vm_load(&vm_sysload[i], &vm_stat_before[i], 
+            compute_vm_load(&vm_sysload[i], &vm_stat_before[i], 
                     &vm_stat_after[i], elapsed_time, nodeinfo->memory);
-            /* TODO: flush the buffer when program exits abnormally using signal processing */
+            /* 
+             * TODO: flush the buffer when program exits abnormally 
+             * using signal processing 
+             */
             fprintf(vminfo[i].fp, FORMATS, 
                     (long)curtime, index, vm_sysload[i].cpu_load, 
                     vm_sysload[i].mem_load, vm_sysload[i].rd_load, 
                     vm_sysload[i].wr_load, vm_sysload[i].rx_load, 
                     vm_sysload[i].tx_load);
         }
-        calculate_phy_load(phy_sysload, phy_stat_before, phy_stat_after, elapsed_time);
+        compute_phy_load(phy_sysload, phy_stat_before, 
+                phy_stat_after, elapsed_time);
         fprintf(phyinfo->fp, FORMATS, 
                     (long)curtime, index, phy_sysload->cpu_load, 
                     phy_sysload->mem_load, phy_sysload->rd_load, 
                     phy_sysload->wr_load, phy_sysload->rx_load, 
                     phy_sysload->tx_load);
+        /* 
+         * actually, we have collected all information needed, 
+         * do the prediction and schedule here 
+         */
     }
 
     /* free all the VM instances */
