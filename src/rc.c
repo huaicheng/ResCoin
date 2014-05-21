@@ -87,7 +87,7 @@ int get_blkio(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
     virDomainGetBlkioParameters(domain, *params, nparams, 0);
     *params = (virTypedParameterPtr)malloc(sizeof(**params) * (*nparams));
     /* call virDomainGetBlkioParameters() again to fill information to the params struct */
-    if (-1 == virDomainGetBlkioParameters(domain, *params, *nparams, 0)) {
+    if (-1 == virDomainGetBlkioParameters(domain, *params, nparams, 0)) {
         fprintf(stderr, "get domain blkio parameters failed...\n");
         return -1;
     }
@@ -107,11 +107,11 @@ int get_mem(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
     if (virDomainGetMemoryParameters(domain, NULL, nparams, 0) == 0 && (*nparams != 0)) {
         *params = (virTypedParameterPtr)malloc(sizeof(**params) * (*nparams));
         memset(params, 0, sizeof(**params) * (*nparams));
-        if (0 != virDomainGetMemoryParameters(domain, *params, *nparams, 0))
+        if (0 != virDomainGetMemoryParameters(domain, *params, nparams, 0))
             return -1;
         return 0;
     }
-    reuturn -1;
+    return -1;
 }
 
 /*
@@ -233,4 +233,5 @@ int set_mem(virDomainPtr domain, unsigned long new_memsize)
     if (virDomainSetMemory(domain, new_memsize) != 0) {
         fprintf(stderr, "Can't set VM memory to %ld\n", new_memsize);
         exit(errno);
+    }
 }

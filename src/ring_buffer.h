@@ -1,12 +1,14 @@
 #ifndef __RING_BUFFER_H
 #define __RING_BUFFER_H
 
+#include <stdlib.h>
+
 /* 
  * change "double" to the corresponding data type you want, elemtype is used as
  * the common data type represented for a specific data type such as double. We
  * do the alias to make the API versatile.
  */
-#define double elemtype
+typedef double elemtype;
 
 /*
  * This is my version of ring buffer implementation
@@ -28,16 +30,16 @@ struct ring_buffer
 
 void rb_init(struct ring_buffer *rb, int size)
 {
-    cb->size = size + 1;
-    cb->start = 0;
-    cb->end = 0;
-    cb->buff = (elemtype *)malloc(sizeof(elemtype) * cb->size);
+    rb->size = size + 1;
+    rb->start = 0;
+    rb->end = 0;
+    rb->buff = (elemtype *)malloc(sizeof(elemtype) * rb->size);
 }
 
 void rb_free(struct ring_buffer *rb)
 {
-    /* if cb->buff == NULL, nothing happens */
-    free(cb->buff);
+    /* if rb->buff == NULL, nothing happens */
+    free(rb->buff);
 }
 
 int rb_is_full(struct ring_buffer *rb)

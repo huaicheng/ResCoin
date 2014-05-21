@@ -1,6 +1,9 @@
 #ifndef __EWMA_H_
 #define __EWMA_H_
 
+#include <stdlib.h>
+#include <math.h>
+
 #define alpha       0.8
 #define nr_data     100
 

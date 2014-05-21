@@ -4,6 +4,7 @@
 #include <libvirt/libvirt.h>
 #include <libvirt/libvirt-qemu.h>
 #include <libvirt/virterror.h>
+#include <errno.h>
 
 /* VM scheduling infomation */
 typedef struct vm_schedinfo {
