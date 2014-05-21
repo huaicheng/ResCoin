@@ -4,4 +4,12 @@
  */
 
 vm_monitor.c: program based on libvirt API to monitor the resource usage
-of VMs and host(cpu, memory, disk and network)
+of VMs and host(cpu, memory, disk and network), planning to treat it as
+the main entry of the whole framework. DO remember to Reconstruct the code 
+base after some time later.
+
+rc.c/rc.h: virutal machine resource tuning functions
+
+ewma.c/ewma.h: the prediction model used to predict resource workload
+
+gmmagent.c: the agent running in each VM to collect the memory usage info

@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>              /* system error number */
+#include "ring_buffer.h"
+#include "ewma.h"
 
 #define L_PORT          4588    /* server listen port */
 #define DOMAIN_XML_SIZE 8192    /* in bytes */
@@ -1013,6 +1015,8 @@ int main(int argc, char **argv)
 
     struct mach_load *phy_sysload = 
         (struct mach_load *)malloc(sizeof(struct mach_load));
+
+    /* time window history data storage */
 
     while (1) {
 

@@ -31,7 +31,7 @@ function log()
     echo "${prefix} $@" >&2
 }
 
-function extract_commencts() #1: object file
+function extract_comments() #1: object file
 {
     egrep "^#"
 }
