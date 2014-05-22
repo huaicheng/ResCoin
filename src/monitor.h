@@ -29,10 +29,9 @@
 #define FORMATS \
         "%-6ld %-6ld %-6.2lf %-6.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf\n"
 
-char *hypervisor = "qemu:///system";
-int active_domain_num = 0;
-/* by default, we suppose there is only one core in the host */
-int nr_cores = 1; 
+extern char *hypervisor;
+extern int active_domain_num;
+extern int nr_cores;
 
 struct vm_ipaddr_name_list 
 {
@@ -40,15 +39,8 @@ struct vm_ipaddr_name_list
     char ipaddr[IPSZ]; /* xxx.xxx.xxx.xxx */
 };
 
-/*
- * you should manually fill this array with your 
- * virtual machine domain name and ipaddr info
- */
-struct vm_ipaddr_name_list vminl[] = {
-    { "vmaster", "192.168.0.231" },
-    { "vslave01", "192.168.0.232" },
-    { "vslave02", "192.168.0.233" }
-};
+extern struct vm_ipaddr_name_list vminl[];
+
 
 #define vminlsz sizeof(vminl)/sizeof(struct vm_ipaddr_name_list)
 

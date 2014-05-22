@@ -4,6 +4,21 @@
 
 #include "monitor.h"
 
+char *hypervisor = "qemu:///system";
+int active_domain_num = 0;
+/* by default, we suppose there is only one core in the host */
+int nr_cores = 1; 
+
+/*
+ * you should manually fill this array with your 
+ * virtual machine domain name and ipaddr info
+ */
+struct vm_ipaddr_name_list vminl[] = {
+    { "vmaster", "192.168.0.231" },
+    { "vslave01", "192.168.0.232" },
+    { "vslave02", "192.168.0.233" }
+};
+
 /*
  * must be called before using struct vm_info, only need once
  */
