@@ -22,16 +22,16 @@ struct ewma_coff
     double tx_alpha;
 };
 
-/* 
+ 
 double genrand();
-
-double ewma(double estv_prev, int val_prev, double calpha);
 
 double stdev(double estv, double data);
 
+double ewma(double estv_prev, double val_prev, double calpha);
+
 void ewma_load(struct mach_load *estv_curr, struct mach_load estv_prev, 
         struct mach_load val_prev, struct ewma_coff coff);
-*/
+
 
 double genrand()
 {
