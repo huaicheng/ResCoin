@@ -2,13 +2,14 @@
 #define __RING_BUFFER_H
 
 #include <stdlib.h>
+#include "monitor.h"
 
 /* 
  * change "double" to the corresponding data type you want, elemtype is used as
  * the common data type represented for a specific data type such as double. We
  * do the alias to make the API versatile.
  */
-typedef double elemtype;
+typedef struct mach_load elemtype;
 
 /*
  * This is my version of ring buffer implementation
@@ -72,6 +73,15 @@ void rb_read(struct ring_buffer *rb, elemtype *val)
 {
     *val = rb->buff[rb->start];
     rb->start = (rb->start + 1) % rb->size;
+}
+
+/*
+ * read the second to last value from the buffer
+ * NO changes in the start/end position
+ */
+void rb_read_last(struct ring_buffer *rb, elemtype *val)
+{
+    *val = rb->buff[rb->end-1];
 }
 
 #endif

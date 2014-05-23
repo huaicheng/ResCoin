@@ -4,6 +4,8 @@
 #include "ewma.h"
 #include "monitor.h"
 
+#define WINSZ  1000
+
 int main(int argc, char **argv)
 {
     virConnectPtr conn = NULL;
@@ -12,6 +14,11 @@ int main(int argc, char **argv)
     long index = 0;
     time_t curtime = 0;
     int ret, i;
+
+    struct ring_buffer *est, *obs;
+    struct ring_buffer **vm_est, **vm_obs;
+    struct ewma_coff coff, hcoff;
+
 
     /* build connection with hypervisor */
     conn = virConnectOpen(hypervisor);
@@ -44,7 +51,22 @@ int main(int argc, char **argv)
     init_phy_info(phyinfo);
     create_phy_rst_file(phyinfo);
 
+    /* for host history data storage */
+    rb_init(est, WINSZ);
+    rb_init(obs, WINSZ);
+
+    /* ring buffer for each VM */ 
+    vm_est = (struct ring_buffer **)
+        malloc(sizeof(struct ring_buffer *) * active_domain_num);
+    vm_obs = (struct ring_buffer **)
+        malloc(sizeof(struct ring_buffer *) * active_domain_num);
+    for (i = 0; i < active_domain_num; i++)
+        vm_obs[i] = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
+
     for (i = 0; i < active_domain_num; i++) {
+
+        rb_init(vm_est[i], WINSZ);
+        rb_init(vm_obs[i], WINSZ);
 
         init_vm_info(&vminfo[i]);
 
@@ -56,6 +78,7 @@ int main(int argc, char **argv)
                     vminfo[i].id);
             exit(VIR_ERR_INVALID_DOMAIN);
         }
+
         get_vm_static_info(&vminfo[i]);
         //print_vm_info(&vminfo[i]);
     }
@@ -116,6 +139,10 @@ int main(int argc, char **argv)
         for (i = 0; i < active_domain_num; i++) {
             compute_vm_load(&vm_sysload[i], &vm_stat_before[i], 
                     &vm_stat_after[i], elapsed_time, nodeinfo->memory);
+
+            /* write the observed data to ring buffer */
+            rb_write(vm_obs[i], &vm_sysload[i]);
+
             /* 
              * TODO: flush the buffer when program exits abnormally 
              * using signal processing 
@@ -128,15 +155,48 @@ int main(int argc, char **argv)
         }
         compute_phy_load(phy_sysload, phy_stat_before, 
                 phy_stat_after, elapsed_time);
+
+        /* write the observed host data to ring buffer */
+        rb_write(obs, phy_sysload);
+
         fprintf(phyinfo->fp, FORMATS, 
-                    (long)curtime, index, phy_sysload->cpu_load, 
-                    phy_sysload->mem_load, phy_sysload->rd_load, 
-                    phy_sysload->wr_load, phy_sysload->rx_load, 
-                    phy_sysload->tx_load);
+                (long)curtime, index, phy_sysload->cpu_load, 
+                phy_sysload->mem_load, phy_sysload->rd_load, 
+                phy_sysload->wr_load, phy_sysload->rx_load, 
+                phy_sysload->tx_load);
         /* 
          * actually, we have collected all information needed, 
          * do the prediction and schedule here 
          */
+
+        /* init the first estimation value to the observed data */
+        if (index == 1) {
+            /* VMs' first estimation value initialization */
+            for (i = 0; i < active_domain_num; i++)
+                rb_write(vm_est[i], &vm_obs[i]->buff[0]);
+
+            /* host's first estimation value initialization */
+            rb_write(est, &obs->buff[0]);
+        } else {
+            /* estimate the next time period data using ewma() */
+            struct mach_load est_curr_val;
+            int prev_pos;
+            
+            /* VMs */
+            for (i = 0; i < active_domain_num; i++) { 
+                prev_pos = (vm_est[i]->end - 1) % vm_est[i]->size;
+                memset(&est_curr_val, 0, sizeof(est_curr_val));
+                ewma_load(&est_curr_val, vm_est[i]->buff[prev_pos], 
+                        vm_obs[i]->buff[prev_pos], coff);
+                rb_write(vm_est[i], &est_curr_val);
+            }
+            /* host */
+            prev_pos = (est->end - 1) % est->size;
+            memset(&est_curr_val, 0, sizeof(est_curr_val));
+            ewma_load(&est_curr_val, est->buff[prev_pos],
+                    obs->buff[prev_pos], hcoff); 
+            rb_write(est, &est_curr_val);
+        }
     }
 
     /* free all the VM instances */
