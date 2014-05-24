@@ -81,7 +81,8 @@ void rb_read(struct ring_buffer *rb, elemtype *val)
  */
 void rb_read_last(struct ring_buffer *rb, elemtype *val)
 {
-    *val = rb->buff[rb->end-1];
+    int last_val_pos = (rb->end - 1 + rb->size) % rb->size;
+    *val = rb->buff[last_val_pos];
 }
 
 #endif

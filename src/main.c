@@ -4,7 +4,7 @@
 #include "ewma.h"
 #include "monitor.h"
 
-#define WINSZ  1000
+#define WINSZ  10
 
 int main(int argc, char **argv)
 {
@@ -17,7 +17,10 @@ int main(int argc, char **argv)
 
     struct ring_buffer *est, *obs;
     struct ring_buffer **vm_est, **vm_obs;
-    struct ewma_coff coff, hcoff;
+
+    /* Suppose the initial coefficient "alpha" value is 0.7 */
+    struct ewma_coff  coff = { 0.7, 0.7, 0.7, 0.7, 0.7, 0.7 }, 
+                     hcoff = { 0.7, 0.7, 0.7, 0.7, 0.7, 0.7 };
 
 
     /* build connection with hypervisor */
@@ -52,6 +55,8 @@ int main(int argc, char **argv)
     create_phy_rst_file(phyinfo);
 
     /* for host history data storage */
+    est = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
+    obs = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
     rb_init(est, WINSZ);
     rb_init(obs, WINSZ);
 
@@ -60,13 +65,14 @@ int main(int argc, char **argv)
         malloc(sizeof(struct ring_buffer *) * active_domain_num);
     vm_obs = (struct ring_buffer **)
         malloc(sizeof(struct ring_buffer *) * active_domain_num);
-    for (i = 0; i < active_domain_num; i++)
-        vm_obs[i] = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
-
     for (i = 0; i < active_domain_num; i++) {
-
+        vm_est[i] = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
+        vm_obs[i] = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
         rb_init(vm_est[i], WINSZ);
         rb_init(vm_obs[i], WINSZ);
+    }
+
+    for (i = 0; i < active_domain_num; i++) {
 
         init_vm_info(&vminfo[i]);
 
@@ -184,11 +190,21 @@ int main(int argc, char **argv)
             
             /* VMs */
             for (i = 0; i < active_domain_num; i++) { 
-                prev_pos = (vm_est[i]->end - 1) % vm_est[i]->size;
+                prev_pos = (vm_est[i]->end - 1 + vm_est[i]->size) % 
+                    vm_est[i]->size;
                 memset(&est_curr_val, 0, sizeof(est_curr_val));
                 ewma_load(&est_curr_val, vm_est[i]->buff[prev_pos], 
                         vm_obs[i]->buff[prev_pos], coff);
                 rb_write(vm_est[i], &est_curr_val);
+                /* for test */
+                struct mach_load est_val, obs_val;
+                rb_read_last(vm_est[i], &obs_val);
+                rb_read_last(vm_est[i], &est_val);
+                printf("%6.2lf%6.2lf%6.2lf%6.2lf%8.2lf%8.2lf%8.2lf%8.2lf\n", 
+                        obs_val.cpu_load, est_val.cpu_load,
+                        obs_val.mem_load, est_val.mem_load,
+                        obs_val.rd_load, est_val.rd_load,
+                        obs_val.wr_load, est_val.wr_load);
             }
             /* host */
             prev_pos = (est->end - 1) % est->size;
