@@ -419,11 +419,14 @@ void compute_vm_load(struct mach_load *vmload,
     vmload->cpu_load = delta_cpu_time * 1.0 / 1000 / microsec * 100 / nr_cores;  
 
     /* (2). %MEM: use the rss size as the total used memory of VM */
+    /* TODO: rethinking about representing the VM memory load based on 
+     * physical total memory, not of the VM's 
+     */
     //vmload->mem_load = (vm_stat_after->rss) * 1.0 / total_mem * 100; 
     //vmload->mem_load = (vm_stat_after->curmem)  * 1.0 / total_mem * 100;
     vmload->mem_load = 
         100 - (double)(vm_stat_after->memfree + vm_stat_after->buffers +
-        vm_stat_after->cached) / vm_stat_after->memtotal * 100.0;
+        vm_stat_after->cached) / total_mem * 100.0;
 
     /* (3). vm disk read rate */
     vmload->rd_load = delta_rd_bytes * 1.0 / 1024 / microsec * 1000000;

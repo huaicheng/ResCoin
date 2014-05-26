@@ -37,7 +37,7 @@ function extract_comments() #1: object file
 }
 
 # 提取文件扩展名
-function filext ()  $1
+function filext ()  #$1
 { 
     echo ${1##*.}
 }

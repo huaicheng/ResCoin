@@ -213,6 +213,9 @@ int main(int argc, char **argv)
                     obs->buff[prev_pos], hcoff); 
             rb_write(est, &est_curr_val);
         }
+
+        /* do the resource scheduling here */
+        schedule(struct ring_buffer *delta_vm_);
     }
 
     /* free all the VM instances */

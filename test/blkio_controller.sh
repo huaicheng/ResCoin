@@ -10,6 +10,7 @@ function get_blkio_time()  #1: blkio.time
 { 
     cat $1 | awk '{print $2}'
 }
+
 echo "Welcome to the VM blkio weight changing test"
 echo "====================old blkio weight================="
 printf "%-10s\t%s\n" "VMASTER"  "`cat $VMASTER_DIR/blkio.weight`"

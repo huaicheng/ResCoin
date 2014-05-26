@@ -18,15 +18,15 @@ echo 3 > /proc/sys/vm/drop_caches
 t11_time=`get_blkio_time $T1D/blkio.time`
 t21_time=`get_blkio_time $T2D/blkio.time`
 
-dd if=test1_file of=test1_file.out 2>&1>/dev/null &
+dd if=/dev/sda of=/dev/null &
 echo $! > $T1D/tasks
 cat $T1D/tasks
 
-dd if=test2_file of=test2_file.out 2>&1>/dev/null &
+dd if=/dev/sda of=/dev/null &
 echo $! > $T2D/tasks
 cat $T2D/tasks
 
-sleep 20
+sleep 100
 
 # kill all the "dd" tasks
 #for i in `ps -ef | grep -w dd | grep -v grep | awk '{print $2}'`
