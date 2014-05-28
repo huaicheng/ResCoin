@@ -6,6 +6,21 @@
 
 #define WINSZ  10
 
+/*
+ *  "delta <-- ml1 - ml2"
+ */
+void compute_load_delta(struct mach_load *delta, struct mach_load *ml1,
+                        struct mach_load *ml2)
+{
+    delta->cpu_load = ml1->cpu_load - ml2->cpu_load;
+    delta->mem_load = ml1->mem_load - ml2->mem_load;
+    delta->rd_load = ml1->rd_load - ml2->rd_load;
+    delta->wr_load = ml1->wr_load - ml2->wr_load;
+    delta->rx_load = ml1->rx_load - ml2->rx_load;
+    delta->tx_load = ml1->tx_load - ml2->tx_load;
+}
+
+
 int main(int argc, char **argv)
 {
     virConnectPtr conn = NULL;
@@ -15,8 +30,9 @@ int main(int argc, char **argv)
     time_t curtime = 0;
     int ret, i;
 
+
     struct ring_buffer *est, *obs;
-    struct ring_buffer **vm_est, **vm_obs;
+    struct ring_buffer **vm_est, **vm_obs, **vm_delta;
 
     /* Suppose the initial coefficient "alpha" value is 0.7 */
     struct ewma_coff  coff = { 0.7, 0.7, 0.7, 0.7, 0.7, 0.7 }, 
@@ -54,22 +70,28 @@ int main(int argc, char **argv)
     init_phy_info(phyinfo);
     create_phy_rst_file(phyinfo);
 
-    /* for host history data storage */
+    /* for host workload related data storage */
     est = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
     obs = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
+    delta = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
     rb_init(est, WINSZ);
     rb_init(obs, WINSZ);
+    rb_init(delta, WINSZ);
 
     /* ring buffer for each VM */ 
     vm_est = (struct ring_buffer **)
         malloc(sizeof(struct ring_buffer *) * active_domain_num);
     vm_obs = (struct ring_buffer **)
         malloc(sizeof(struct ring_buffer *) * active_domain_num);
+    vm_delta = (struct ring_buffer **)
+        malloc(sizeof(struct ring_buffer *) * active_domain_num);
     for (i = 0; i < active_domain_num; i++) {
         vm_est[i] = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
         vm_obs[i] = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
+        vm_delta[i] = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
         rb_init(vm_est[i], WINSZ);
         rb_init(vm_obs[i], WINSZ);
+        rb_init(vm_delta[i], WINSZ);
     }
 
     for (i = 0; i < active_domain_num; i++) {
@@ -176,15 +198,17 @@ int main(int argc, char **argv)
          */
 
         /* init the first estimation value to the observed data */
+        struct mach_load delta_tmp;
         if (index == 1) {
             /* VMs' first estimation value initialization */
-            for (i = 0; i < active_domain_num; i++)
+            for (i = 0; i < active_domain_num; i++) {
                 rb_write(vm_est[i], &vm_obs[i]->buff[0]);
-
-            /* host's first estimation value initialization */
-            rb_write(est, &obs->buff[0]);
+                /* delta = vm_est - vm_obs */
+                memset(&delta_tmp, 0, sizeof(delta_tmp));
+                rb_write(vm_delta[i], &delta_tmp);
+            }
         } else {
-            /* estimate the next time period data using ewma() */
+            /* estimate the next time period workload data using ewma() */
             struct mach_load est_curr_val;
             int prev_pos;
             
@@ -196,6 +220,10 @@ int main(int argc, char **argv)
                 ewma_load(&est_curr_val, vm_est[i]->buff[prev_pos], 
                         vm_obs[i]->buff[prev_pos], coff);
                 rb_write(vm_est[i], &est_curr_val);
+                compute_load_delta(&delta_tmp, vm_est[i]->buff[prev_pos], 
+                        vm_obs[i]->buff[prev_pos]);
+                rb_write(vm_delta[i], &delta_tmp);
+
                 /* for test */
                 struct mach_load est_val, obs_val;
                 rb_read_last(vm_est[i], &obs_val);
@@ -206,16 +234,11 @@ int main(int argc, char **argv)
                         obs_val.rd_load, est_val.rd_load,
                         obs_val.wr_load, est_val.wr_load);
             }
-            /* host */
-            prev_pos = (est->end - 1) % est->size;
-            memset(&est_curr_val, 0, sizeof(est_curr_val));
-            ewma_load(&est_curr_val, est->buff[prev_pos],
-                    obs->buff[prev_pos], hcoff); 
-            rb_write(est, &est_curr_val);
         }
 
-        /* do the resource scheduling here */
-        schedule(struct ring_buffer *delta_vm_);
+        /* do resource scheduling here */
+        schedule(struct ring_buffer *obs, struct ring_buffer **vm_delta, 
+                int active_domain_num);
     }
 
     /* free all the VM instances */
