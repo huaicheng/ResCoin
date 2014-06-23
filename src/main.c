@@ -178,8 +178,8 @@ int main(int argc, char **argv)
             fprintf(vminfo[i].fp, FORMATS, 
                     (long)curtime, index, vm_sysload[i].cpu_load, 
                     vm_sysload[i].mem_load, vm_sysload[i].rd_load, 
-                    vm_sysload[i].wr_load, vm_sysload[i].rx_load, 
-                    vm_sysload[i].tx_load);
+                    vm_sysload[i].wr_load, vm_sysload[i].disk_load, 
+                    vm_sysload[i].rx_load, vm_sysload[i].tx_load);
         }
         compute_phy_load(phy_sysload, phy_stat_before, 
                 phy_stat_after, elapsed_time);
@@ -190,8 +190,8 @@ int main(int argc, char **argv)
         fprintf(phyinfo->fp, FORMATS, 
                 (long)curtime, index, phy_sysload->cpu_load, 
                 phy_sysload->mem_load, phy_sysload->rd_load, 
-                phy_sysload->wr_load, phy_sysload->rx_load, 
-                phy_sysload->tx_load);
+                phy_sysload->wr_load, phy_sysload->disk_load,
+                phy_sysload->rx_load, phy_sysload->tx_load);
         /* 
          * actually, we have collected all information needed, 
          * do the prediction and schedule here 

@@ -27,7 +27,7 @@
 #define IPSZ            16
 #define ETC_HOSTS       "/etc/hosts"
 #define FORMATS \
-        "%-6ld %-6ld %-6.2lf %-6.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf\n"
+   "%-6ld %-6ld %-6.2lf %-6.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf\n"
 
 extern char *hypervisor;
 extern int active_domain_num;
@@ -99,7 +99,7 @@ enum {
 };
 
 typedef struct phy_statistics {
-    /* cpu related stat */
+    /* cpu related stat, "/proc/stat" */
     ull user; /* in ticks */
     ull nice;
     ull system;
@@ -111,17 +111,18 @@ typedef struct phy_statistics {
     ull guest;
     ull guest_nice; /* since Linux 2.6.33 */
 
-    /* memory related stat */
+    /* memory related stat, "/proc/meminfo" */
     unsigned long memtotal;
     unsigned long memfree;
     unsigned long buffers;
     unsigned long cached;
 
-    /* disk related stat */
-    ull rd_sectors;
-    ull  wr_sectors;
+    /* disk related stat, "/proc/diskstats" */
+    ull rd_sectors;  /* Field 3 */
+    ull wr_sectors;  /* Field 6 */
+    ull io_time_ms;  /* Field 10 */ 
 
-    /* net related stat */
+    /* net related stat, "/proc/dev/net" */
     ull rx_bytes;
     ull tx_bytes;
 
@@ -173,8 +174,12 @@ typedef struct vm_statistics {
 typedef struct mach_load {
     double cpu_load; /* 0~100 */
     double mem_load; /* 0~100 */
+
+    double disk_load; /* 0~100 */
     double rd_load;  /* Kbps */
     double wr_load;  /* Kbps */
+
+    double net_load; /* 0~100 */
     double rx_load;  /* Kbps */
     double tx_load;  /* Kbps */
 }mach_load;

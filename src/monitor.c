@@ -397,7 +397,8 @@ void get_vm_workload(struct vm_statistics *vm_stat, struct vm_info *vminfo)
 void compute_vm_load(struct mach_load *vmload, 
         struct vm_statistics *vm_stat_before, 
         struct vm_statistics *vm_stat_after, 
-        ull microsec, unsigned long total_mem)
+        ull microsec, unsigned long total_mem,
+        struct mach_load *phy_load)
 {
 
     ull delta_cpu_time = vm_stat_after->cpu_time - vm_stat_before->cpu_time;
@@ -433,6 +434,10 @@ void compute_vm_load(struct mach_load *vmload,
 
     /* (4). vm disk write rate */
     vmload->wr_load = delta_wr_bytes * 1.0 / 1024 / microsec * 1000000;
+
+    /* vm disk %util */
+    vmload->disk_load = (vmload->rd_load + vmload->wr_load) / (phy_load->rd_load
+            + phy_load->wr_load) * phy_load->disk_load;
 
     /* (5). vm net rx rate */
     vmload->rx_load = delta_rx_bytes * 1.0 / 1024 / microsec * 1000000;
@@ -610,8 +615,9 @@ void get_phy_blkstat(struct phy_statistics *phy_stat, const char *disk)
     while (fgets(buf, sizeof(buf), fp)) {
         sscanf(buf, "%*d %*d %s", device);
         if (0 == strcmp(disk, device)) {
-            sscanf(buf, "%*u %*u %*s %*u %*u %Lu %*u %*d %Lu", 
-                    &phy_stat->rd_sectors, &phy_stat->wr_sectors);
+            sscanf(buf, "%*u %*u %*s %*u %*u %Lu %*u %*d %Lu %*Lu %*Lu %*Lu %Lu", 
+                    &phy_stat->rd_sectors, &phy_stat->wr_sectors, 
+                    &phy_stat->io_time_ms);
             break;
         }
         memset(device, '\0', sizeof(device));
@@ -714,6 +720,8 @@ void compute_phy_load(struct mach_load *phyload,
         (phy_stat_after->rd_sectors - phy_stat_before->rd_sectors) * 512;
     ull delta_wr_bytes = 
         (phy_stat_after->wr_sectors - phy_stat_before->wr_sectors) * 512;
+    ull delta_disk_io_time = 
+        (phy_stat_after->io_time_ms - phy_stat_before->io_time_ms);
 
     ull delta_rx_bytes = phy_stat_after->rx_bytes - phy_stat_before->rx_bytes;
     ull delta_tx_bytes = phy_stat_after->tx_bytes - phy_stat_before->tx_bytes;
@@ -748,6 +756,20 @@ void compute_phy_load(struct mach_load *phyload,
      *  [in Kbps]
      */
     phyload->wr_load = delta_wr_bytes * 1.0 / 1024 / microsec * 1000000; 
+
+    /* can't use iostat to get the %util of disk becuase it consume another time 
+     * period, but for the current implementation, the time slice has been 
+     * consumed by the monitor to get CPU and disk rate related infomation.
+     */
+
+    /* TODO: NEED to compute disk %util here. (Copy from iostat)
+     * %util = (time processing IO requests) / (total time elapsed) * 100.0
+     * (1). read from /proc/diskstats, column 10 to get the disk's io 
+     * processing time
+     * (2). total elapsed time = (user + system + idle + iowait) / nr_cpu
+     * gotchar !!!!
+     */
+    phyload->disk_load = delta_disk_io_time * 100.0 / microsec * 1000;
 
     /* 
      * (5) NET rx rate 

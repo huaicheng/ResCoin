@@ -3,9 +3,9 @@
 #include "monitor.h"
 
 /* here defines the threshold value of each resource to be tractable */
-#define THRES_CPU 
-#define THRES_MEM
-#define THRES_RD
+#define THRES_CPU  0.8
+#define THRES_MEM  0.8
+#define THRES_RD   
 #define THRES_WR
 #define THRES_RX
 #define THRES_TX
@@ -26,7 +26,6 @@ struct load_in_array
     double load;
     int pos;
 };
-
 
 void thres_store(struct ring_buffer *dest, const string ring_buffer *src, 
         struct ring_buffer *curr)
@@ -112,15 +111,16 @@ void schedule(struct ring_buffer *obs, struct ring_buffer **vm_delta,
     }
 
     /* search through all the VMs */
-   for (i = 0; i < n; i++) {
-       ap = bp = 0;
-       /* exchange resource internally within each VM */ 
-       rb_read_last(vm_delta[i], &val);
-       struct2array(A, B, &ap, &bp, val);
-       /* try your best to inter-exchange resources */
-       int j, k;
-       for (j = 0; j < ap; j++)
-           for (k = 0; k < bp; k++) {
-               if (B[i].load 
-   }
+    for (i = 0; i < n; i++) {
+        ap = bp = 0;
+        /* exchange resource internally within each VM */ 
+        rb_read_last(vm_delta[i], &val);
+        struct2array(A, B, &ap, &bp, val);
+        /* try your best to inter-exchange resources */
+        int j, k;
+        for (j = 0; j < ap; j++)
+            for (k = 0; k < bp; k++) {
+                if (B[i].load )
+            }
+    }
 }

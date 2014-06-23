@@ -3,6 +3,8 @@
  * 2014-04-01
  */
 
+DVRSF: Dynamic VirtualMachine Resource Scheduling Framework, "dvf" for short 
+
 vm_monitor.c: program based on libvirt API to monitor the resource usage
 of VMs and host(cpu, memory, disk and network), planning to treat it as
 the main entry of the whole framework. DO remember to Reconstruct the code 
