@@ -26,8 +26,7 @@
 #define DOMNAMEMAX      64
 #define IPSZ            16
 #define ETC_HOSTS       "/etc/hosts"
-#define FORMATS \
-   "%-6ld %-6ld %-6.2lf %-6.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf %-10.2lf\n"
+#define FORMATS         "%-6ld %-6ld %-6.2lf %-6.2lf %-6.2lf\n"
 
 extern char *hypervisor;
 extern int active_domain_num;
@@ -217,7 +216,8 @@ void get_vm_workload(struct vm_statistics *vm_stat, struct vm_info *vminfo);
 void compute_vm_load(struct mach_load *vmload, 
         struct vm_statistics *vm_stat_before, 
         struct vm_statistics *vm_stat_after,
-        ull microsec, unsigned long total_mem);
+        ull microsec, unsigned long total_mem, 
+        struct mach_load *phy_sysload);
 
 void create_phy_rst_file(struct phy_info *phyinfo);
 

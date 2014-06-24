@@ -93,11 +93,10 @@ void struct2array(struct load_in_array *A, struct load_in_array *B,
     *bp = bpp;
 }
 
-void schedule(struct ring_buffer *obs, struct ring_buffer **vm_delta, 
-        int n, struct mach_load initval);
+void schedule(struct ring_buffer *obs, struct ring_buffer *est, struct ring_buffer **vm_obs, struct ring_buffer **vm_est,
+        struct mach_load *ac, int nr_vm);
 {
     int i;
-    struct load_in_array A[NR_RES] = {0}, B[NR_RES] = {0};
     struct mach_load val;
     int ap, bp;
 

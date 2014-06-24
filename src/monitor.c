@@ -398,7 +398,7 @@ void compute_vm_load(struct mach_load *vmload,
         struct vm_statistics *vm_stat_before, 
         struct vm_statistics *vm_stat_after, 
         ull microsec, unsigned long total_mem,
-        struct mach_load *phy_load)
+        struct mach_load *phy_sysload)
 {
 
     ull delta_cpu_time = vm_stat_after->cpu_time - vm_stat_before->cpu_time;
@@ -436,8 +436,11 @@ void compute_vm_load(struct mach_load *vmload,
     vmload->wr_load = delta_wr_bytes * 1.0 / 1024 / microsec * 1000000;
 
     /* vm disk %util */
-    vmload->disk_load = (vmload->rd_load + vmload->wr_load) / (phy_load->rd_load
-            + phy_load->wr_load) * phy_load->disk_load;
+    vmload->disk_load = (vmload->rd_load + vmload->wr_load) / (phy_sysload->rd_load
+            + phy_sysload->wr_load) * phy_sysload->disk_load;
+    printf("\n====\n%-10.2lf%-10.2lf%-10.2lf%-10.2lf%-6.2lf%-6.2lf\n", vmload->rd_load,
+            vmload->wr_load, phy_sysload->rd_load, phy_sysload->wr_load, phy_sysload->disk_load,
+            vmload->disk_load);
 
     /* (5). vm net rx rate */
     vmload->rx_load = delta_rx_bytes * 1.0 / 1024 / microsec * 1000000;
@@ -615,7 +618,7 @@ void get_phy_blkstat(struct phy_statistics *phy_stat, const char *disk)
     while (fgets(buf, sizeof(buf), fp)) {
         sscanf(buf, "%*d %*d %s", device);
         if (0 == strcmp(disk, device)) {
-            sscanf(buf, "%*u %*u %*s %*u %*u %Lu %*u %*d %Lu %*Lu %*Lu %*Lu %Lu", 
+            sscanf(buf, "%*u %*u %*s %*u %*u %Lu %*u %*d %Lu %*u %*u %*u %Lu", 
                     &phy_stat->rd_sectors, &phy_stat->wr_sectors, 
                     &phy_stat->io_time_ms);
             break;

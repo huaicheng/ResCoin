@@ -14,10 +14,11 @@ void compute_load_delta(struct mach_load *delta, struct mach_load *ml1,
 {
     delta->cpu_load = ml1->cpu_load - ml2->cpu_load;
     delta->mem_load = ml1->mem_load - ml2->mem_load;
-    delta->rd_load = ml1->rd_load - ml2->rd_load;
-    delta->wr_load = ml1->wr_load - ml2->wr_load;
-    delta->rx_load = ml1->rx_load - ml2->rx_load;
-    delta->tx_load = ml1->tx_load - ml2->tx_load;
+    delta->disk_load = ml1->disk_load - ml2->disk_load;
+    /* delta->rd_load = ml1->rd_load - ml2->rd_load; */
+    /* delta->wr_load = ml1->wr_load - ml2->wr_load; */
+    /* delta->rx_load = ml1->rx_load - ml2->rx_load; */
+    /* delta->tx_load = ml1->tx_load - ml2->tx_load; */
 }
 
 
@@ -29,14 +30,15 @@ int main(int argc, char **argv)
     long index = 0;
     time_t curtime = 0;
     int ret, i;
+    struct mach_load *ac; /* size is the number of VMs */
 
 
-    struct ring_buffer *est, *obs;
+    struct ring_buffer *est, *obs, *delta;
     struct ring_buffer **vm_est, **vm_obs, **vm_delta;
 
     /* Suppose the initial coefficient "alpha" value is 0.7 */
-    struct ewma_coff  coff = { 0.7, 0.7, 0.7, 0.7, 0.7, 0.7 }, 
-                     hcoff = { 0.7, 0.7, 0.7, 0.7, 0.7, 0.7 };
+    struct ewma_coff  coff = { 0.7, 0.7, 0.7 }, 
+                     hcoff = { 0.7, 0.7, 0.7 };
 
 
     /* build connection with hypervisor */
@@ -136,10 +138,16 @@ int main(int argc, char **argv)
 
     /* time window history data storage */
 
+
+    ac = (struct mach_load *)malloc(sizeof(struct mach_load) * active_domain_num);
+    memset(ac, 0, sizeof(struct mach_load)*active_domain_num);
+
+
     while (1) {
 
         index++;
         curtime = time((time_t *)NULL);
+        pno = index % WINSZ;
 
         memset(tv_before, 0, sizeof(struct timeval));
         memset(tv_after, 0, sizeof(struct timeval));
@@ -163,10 +171,23 @@ int main(int argc, char **argv)
         /* elaspsed time in microsecond */
         long elapsed_time = (tv_after->tv_sec - tv_before->tv_sec) * 1000000 + 
             (tv_after->tv_usec - tv_before->tv_usec);
+        
+        compute_phy_load(phy_sysload, phy_stat_before, 
+                phy_stat_after, elapsed_time);
+
+        /* write the observed host data to ring buffer */
+        rb_write(obs, phy_sysload);
+
+        fprintf(phyinfo->fp, FORMATS, 
+                (long)curtime, index, phy_sysload->cpu_load, 
+                phy_sysload->mem_load, /*phy_sysload->rd_load, 
+                phy_sysload->wr_load, */phy_sysload->disk_load/*,
+                phy_sysload->rx_load, phy_sysload->tx_load*/);
 
         for (i = 0; i < active_domain_num; i++) {
             compute_vm_load(&vm_sysload[i], &vm_stat_before[i], 
-                    &vm_stat_after[i], elapsed_time, nodeinfo->memory);
+                    &vm_stat_after[i], elapsed_time, nodeinfo->memory,
+                    phy_sysload);
 
             /* write the observed data to ring buffer */
             rb_write(vm_obs[i], &vm_sysload[i]);
@@ -177,21 +198,10 @@ int main(int argc, char **argv)
              */
             fprintf(vminfo[i].fp, FORMATS, 
                     (long)curtime, index, vm_sysload[i].cpu_load, 
-                    vm_sysload[i].mem_load, vm_sysload[i].rd_load, 
-                    vm_sysload[i].wr_load, vm_sysload[i].disk_load, 
-                    vm_sysload[i].rx_load, vm_sysload[i].tx_load);
+                    vm_sysload[i].mem_load, /*vm_sysload[i].rd_load, 
+                    vm_sysload[i].wr_load, */vm_sysload[i].disk_load/*, 
+                    vm_sysload[i].rx_load, vm_sysload[i].tx_load*/);
         }
-        compute_phy_load(phy_sysload, phy_stat_before, 
-                phy_stat_after, elapsed_time);
-
-        /* write the observed host data to ring buffer */
-        rb_write(obs, phy_sysload);
-
-        fprintf(phyinfo->fp, FORMATS, 
-                (long)curtime, index, phy_sysload->cpu_load, 
-                phy_sysload->mem_load, phy_sysload->rd_load, 
-                phy_sysload->wr_load, phy_sysload->disk_load,
-                phy_sysload->rx_load, phy_sysload->tx_load);
         /* 
          * actually, we have collected all information needed, 
          * do the prediction and schedule here 
@@ -220,25 +230,24 @@ int main(int argc, char **argv)
                 ewma_load(&est_curr_val, vm_est[i]->buff[prev_pos], 
                         vm_obs[i]->buff[prev_pos], coff);
                 rb_write(vm_est[i], &est_curr_val);
-                compute_load_delta(&delta_tmp, vm_est[i]->buff[prev_pos], 
-                        vm_obs[i]->buff[prev_pos]);
+                compute_load_delta(&delta_tmp, &vm_est[i]->buff[prev_pos], 
+                        &vm_obs[i]->buff[prev_pos]);
                 rb_write(vm_delta[i], &delta_tmp);
 
                 /* for test */
                 struct mach_load est_val, obs_val;
                 rb_read_last(vm_est[i], &obs_val);
                 rb_read_last(vm_est[i], &est_val);
-                printf("%6.2lf%6.2lf%6.2lf%6.2lf%8.2lf%8.2lf%8.2lf%8.2lf\n", 
+                printf("%6.2lf%6.2lf%6.2lf%6.2lf%6.2lf%6.2lf\n", 
                         obs_val.cpu_load, est_val.cpu_load,
                         obs_val.mem_load, est_val.mem_load,
-                        obs_val.rd_load, est_val.rd_load,
-                        obs_val.wr_load, est_val.wr_load);
+                        obs_val.disk_load, est_val.disk_load);
             }
         }
 
         /* do resource scheduling here */
-        schedule(struct ring_buffer *obs, struct ring_buffer **vm_delta, 
-                int active_domain_num);
+        /* schedule(struct ring_buffer *obs, struct ring_buffer **vm_delta, 
+                int active_domain_num); */
     }
 
     /* free all the VM instances */
