@@ -1,125 +1,100 @@
+/* Attention: In development, still not compilable */
 #include "schedule.h"
 #include "ring_buffer.h"
 #include "monitor.h"
 
-/* here defines the threshold value of each resource to be tractable */
-#define THRES_CPU  0.8
-#define THRES_MEM  0.8
-#define THRES_RD   
-#define THRES_WR
-#define THRES_RX
-#define THRES_TX
-
-enum
+void sum_vm_est(struct mach_load *est_sum, struct ring_buffer **vm_est, 
+        int nr_vm)
 {
-    CPU_RES,
-    MEM_RES,
-    RD_RES,
-    WR_RES,
-    RX_RES,
-    TX_RES,
-    NR_RES
-};
+    int i;
+    for (i = 0; i < nr_vm; i++) {
+        struct mach_load vmtmp;
+        read_rb_last(vm_est[i], &vmtmp);
 
-struct load_in_array
-{
-    double load;
-    int pos;
-};
-
-void thres_store(struct ring_buffer *dest, const string ring_buffer *src, 
-        struct ring_buffer *curr)
-{
-    struct mach_load *val, *val2;
-    rb_read_last(src, &val);
-    rb_read_last(curr, &val2);
+        est_sum->cpu_load += vmtmp->cpu_load;
+        est_sum->mem_load += vmtmp->mem_load;
+        est_sum->disk_load += vmtmp->disk_load;
+    }
 }
 
-/* 
- * positive number -> A, negative number -> B 
- * TODO: add some threshold checking here
- */
-void struct2array(struct load_in_array *A, struct load_in_array *B, 
-        int *ap, int *bp,  struct mach_load val)
+void allocate_cpu(double cpu_share_percentage)
 {
-    int app, bpp;
-
-    if (val.cpu_load > 0) {
-        app++;
-        A[app].load = val.cpu_load;
-        A[app].id = RES_CPU;
-    }
-    else if (val.cpu_load < 0) {
-        bpp++;
-        B[bpp].load = -1 * val.cpu_load;
-        B[app].id = RES_CPU;
-    }
-    
-    if (val.mem_load > 0) {
-        app++;
-        A[app].load = val.mem_load;
-        A[app].id = RES_MEM;
-    }
-    else if (val.mem_load < 0) {
-        bpp++;
-        B[bpp].load = -1 * val.mem_load;
-        B[bpp].id = RES_MEM;
-    }
-
-    if (val.rd_load > 0) {
-        app++;
-        A[app].load = val.rd_load;
-        A[app].id = RES_RD;
-    }
-    else if (val.rd_load < 0) {
-        bpp++;
-        B[bpp].load = -1 * val.rd_load;
-        B[bpp].id = RES_RD;
-    }
-
-    if (val.wr_load > 0) {
-        app++;
-        A[app].load = val.wr_load;
-        A[app].id = RES_WR;
-    }
-    else if (val.wr_load < 0) {
-        bpp++;
-        B[bpp].load = -1 * val.wr_load;
-        B[bpp].id = RES_WR;
-    }
-
-    /* return the array size of A/B */
-    *ap = app;
-    *bp = bpp;
 }
 
-void schedule(struct ring_buffer *obs, struct ring_buffer *est, struct ring_buffer **vm_obs, struct ring_buffer **vm_est,
+void allocate_mem(double mem_share_percentage)
+{
+}
+
+void allocate_disk(double disk_share_percentage)
+{
+}
+
+void schedule(struct ring_buffer *obs, struct ring_buffer *est, 
+        struct ring_buffer **vm_obs, struct ring_buffer **vm_est,
         struct mach_load *ac, int nr_vm);
 {
     int i;
-    struct mach_load val;
-    int ap, bp;
+    double wr_cpu, wr_mem, wr_disk;
 
-    struct ring_buffer **delta_thres;
-    delta_thres = 
-        (struct ring_buffer **)malloc(sizeof(struct ring_buffer *) * n);
-    for (i = 0; i < n; i++) {
-        delta_thres[i] = 
-            (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
-        //thres_store(delta_thres[i], vm_delta[i], TODO);
+    struct mach_load hcap = {
+        .cpu_load = 1.0,
+        .mem_load = 1.0,
+        .disk_load = 1.0
+    };
+
+    struct mach_load last_vm_est[nr_vm];
+
+    struct mach_load est_sum;
+    sum_vm_est(&est_sum, vm_est, nr_vm);
+
+    struct mach_load ac_sum;
+    for (i = 0; i< nr_vm; i++) {
+        ac_sum.cpu_load = ac[i].cpu_load;
+        ac_sum.mem_load = ac[i].mem_load;
+        ac_sum.disk_load = ac[i].disk_load;
     }
 
-    /* search through all the VMs */
-    for (i = 0; i < n; i++) {
-        ap = bp = 0;
-        /* exchange resource internally within each VM */ 
-        rb_read_last(vm_delta[i], &val);
-        struct2array(A, B, &ap, &bp, val);
-        /* try your best to inter-exchange resources */
-        int j, k;
-        for (j = 0; j < ap; j++)
-            for (k = 0; k < bp; k++) {
-                if (B[i].load )
-            }
+    /* read last estimation of all VMs to array as they are frequently used.*/
+    for (i = 0; i < nr_vm; i++) {
+        rb_read_last(vm_est[i], &last_vm_est[i]);
+    }
+
+    /* cpu resource reallocation */
+    if (est_sum.cpu_load <= hcap.cpu_load) {
+        for (i = 0; i < nr_vm; i++) {
+            allocate_cpu(last_vm_est[i].cpu_load);
+        }
+    } else {
+        for (i = 0; i < nr_vm; i++) {
+            wr_cpu = ac[i].cpu_load / ac_sum.cpu_load;
+            allocate_cpu(wr_cpu);
+    }
+    
+    /* memory resource reallocation */
+    if (est_sum.mem_load <= hcap.mem_load) {
+        for (i = 0; i < nr_vm; i++) {
+            allocate_mem(last_vm_est[i].mem_load);
+        }
+    } else {
+        for (i = 0; i < nr_vm; i++) {
+            wr_mem = ac[i].mem_load / ac_sum.mem_load;
+            allocate_mem(wr_mem);
+        }
+    }
+
+    /* disk resource reallocation */
+    if (est_sum.disk_load <= hcap.disk_load) {
+        for (i = 0; i < nr_vm; i++) {
+            allocate_disk(last_vm_est[i].disk_load);
+        }
+    } else {
+        for (i = 0; i < nr_vm; i++) {
+            wr_disk = ac[i].disk_load / ac_sum.disk_load;
+            allocate_disk(wr_disk);
+        }
+    }
+
+    for (i = 0; i < nr_vm; i++) {
+
     }
 }
