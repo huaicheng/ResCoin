@@ -53,9 +53,9 @@ void print_typed_parameters(virTypedParameterPtr domain, int nparams)
 /* 
  * Get the scheduling information of "domain" and store it to "params"
  * Attention: before calling this function, what you need to do is just
- * to define the "params" and "nparams" variable(better define 
- * params = NULL, nparams = 0), DO NOT try to allocate any
- * memory for them as this function will do that for you.
+ * to define the "params" and "nparams" variable(better define params = NULL, 
+ * nparams = 0), DO NOT try to allocate any memory for them as this function 
+ * will do that for you.
  * @Return 0 in case of success and -1 in case of error
  */
 int get_schedinfo(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
@@ -114,71 +114,94 @@ int get_mem(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
     return -1;
 }
 
+int get_params_type(virTypedParameterPtr params, int nparams,
+        const char *field, int *params_type, int *pos)
+{
+    int i;
+    for (i = 0; i < nparams; i++) 
+        if (0 == strcmp(field, params[i].field)) {
+            *params_type = params[i].type;
+            *pos = i;
+            return 0;
+        }
+    return -1;
+}
+
 /*
- * TODO: params.value is a union, how should the new_value be set to the approriate data type ?
- * change params[field].value to new_value, this function is currently used to modify cpu_shares
- * and blkio.weight, so "int" type is enough for new_value.
+ * TODO: params.value is a union, how should the new_value be set to the 
+ * approriate data type ? [ take "const char *" as input ] !!
+ * change params[field].value to new_value
  * return 0 in case of success and -1 in case of error
  */
-int set_params_value(virTypedParameterPtr params, int nparams, const char *field, int new_value)
+int set_params_value(virTypedParameterPtr params, int nparams, 
+        const char *field, const char *value)
 {
+    int ret = -1;
     /*
-     * Firstly, find out the element of cpu_shares from the virTypedParameter struct
-     * and then do the change
+     * Firstly, find out the element of field from the virTypedParameter 
+     * struct and then do the change
      */ 
     int i;
     for (i = 0; i < nparams; i++) {
         if (0 == strcmp(field, params[i].field)) {
             switch (params[i].type) {
                 case VIR_TYPED_PARAM_INT:
-                    params[i].value.i = (int)new_value;
+                    if (strtol_i(value, NULL, 10, &params->value.i) < 0)
+                        goto cleanup;
                     break;
 
                 case VIR_TYPED_PARAM_UINT:
-                    params[i].value.ui = (unsigned int)new_value;
+                    if (strtol_ui(value, NULL, 10, &params->value.ui) < 0)
+                        goto cleanup;
                     break;
 
                 case VIR_TYPED_PARAM_LLONG:
-                    params[i].value.l = (long long)new_value;
+                    if (strtol_ll(value, NULL, 10, &params->value.l) < 0)
+                        goto cleanup;
                     break;
 
                 case VIR_TYPED_PARAM_ULLONG:
-                    params[i].value.ul = (unsigned long long)new_value;
+                    if (strtol_ull(value, NULL, 10, &params->value.ul) < 0)
+                        goto cleanup;
                     break;
 
                 case VIR_TYPED_PARAM_DOUBLE:
-                    params[i].value.d = (double)new_value;
+                    if (strtod_d(value, NULL, 10, &params->value.d) < 0)
+                        goto cleanup;
                     break;
 
                 case VIR_TYPED_PARAM_BOOLEAN:
                     params[i].value.b = (bool)new_value;
+                    if (strtod_d(value, NULL, 10, &params->value.d) < 0)
+                        goto cleanup;
                     break;
 
                 default :
-                    printf("Type %d not supported now\n", params[i].type);
+                    printf("unexpected type %d for field %s\n", type, name);
                     return -1;
             }
-            return 0;
+            ret = 0;
         }
     }
-    return -1;
+    return ret;
 }
 
 /* 
- * set the scheduler parameters of domain to "params", remember that params is the new
- * scheduler parameters now, you should set it to the appropriate value before calling 
- * this function.
+ * set the scheduler parameters of domain to "params", remember that params is 
+ * the new scheduler parameters now, you should set it to the appropriate value 
+ * before calling this function.
  * return 0 in case of success, and -1 in case of error
  */
-int set_schedinfo(virDomainPtr domain, int new_cpu_shares)
+int set_schedinfo(virDomainPtr domain, const char *field, long long new_value)
 {
     virTypedParameterPtr params = NULL;
     int nparams = 0;
 
     get_schedinfo(domain, &params, &nparams);
-    if (0 == set_params_value(params, nparams, "cpu_shares", new_cpu_shares)) {
+    if (0 == set_params_value(params, nparams, field, new_value)) {
         /* 
-         * flags:0 represents that the setting is only effective for the current state 
+         * flags:0 represents that the setting is only effective for the current 
+         * state 
          */
         virDomainSetSchedulerParametersFlags(domain, params, nparams, 0);
         /* 
@@ -186,7 +209,7 @@ int set_schedinfo(virDomainPtr domain, int new_cpu_shares)
          * the virDomainGetSchedulerParameter() function to get the params 
          * and then print its value. 
          */
-        print_typed_parameters(params, nparams);
+        /* print_typed_parameters(params, nparams); */
         free(params);
         return 0;
     }
@@ -196,14 +219,80 @@ int set_schedinfo(virDomainPtr domain, int new_cpu_shares)
 /* 
  * wrapper for set_schedinfo()
  */
-int set_cpu_shares(virDomainPtr domain, int new_cpu_shares)
+int set_cpu_shares(virDomainPtr domain, long long new_cpu_shares)
 {
-    return set_schedinfo(domain, new_cpu_shares);
+    return set_schedinfo(domain, "cpu_shares", new_cpu_shares);
+}
+
+int get_cpu_shares(virDomainPtr domain, long long *cpu_shares)
+{
+    int i;
+    int type;
+    virTypedParamsPtr params = NULL;
+    int nparams = 0;
+
+    if (-1 == get_schedinfo(domain, params, &nparams)) 
+        return -1;
+
+    if (-1 == get_params_type(params, nparams, "cpu_shares", &type, &i)) 
+        return -1;
+
+    switch (type) {
+        case VIR_TYPED_PARAM_INT:
+            cpu_shares = (long long)params[i].value.i;
+            break;
+
+        case VIR_TYPED_PARAM_UINT:
+            cpu_shares = (long long)params[i].value.ui; 
+            break;
+
+        case VIR_TYPED_PARAM_LLONG:
+            cpu_shares = (long long)params[i].value.l;
+            break;
+
+        case VIR_TYPED_PARAM_ULLONG:
+            cpu_shares = (long long)params[i].value.ul;
+            break;
+
+        case VIR_TYPED_PARAM_DOUBLE:
+            cpu_shares = (long long)params[i].value.d;
+            break;
+
+        case VIR_TYPED_PARAM_BOOLEAN:
+            cpu_shares = (long long)params[i].value.b;
+            break;
+
+        default :
+            printf("Type %d not supported now\n", params[i].type);
+            return -1;
+    }
+    if (1 == virTypedParamsGetLLong(params, nparams, "cpu_shares", cpu_shares))
+            return 0;
+        return -1;
+    }
+    return -1;
+}
+
+int set_vcpu_period(virDomainPtr domain, long long new_vcpu_period)
+{
+    return set_schedinfo(domain, "vcpu_period", new_vcpu_period);
+}
+
+int set_vcpu_quota(virDomainPtr domain, long long new_vcpu_quota)
+{
+    return set_schedinfo(domain, "vcpu_quota", new_vcpu_quota);
+}
+
+int set_vcpu_bw(virDomainPtr domain, long long new_vcpu_period, 
+        long long new_vcpu_quota) 
+{
+    return (set_vcpu_period(domain, new_vcpu_period) && 
+            set_vcpu_quota(domain, new_vcpu_quota));
 }
 
 /*
- * params and nparams don't need to be initialized here, get_blkio() will do that for you
- * set the blkio parameters of "weight" to the specific value
+ * params and nparams don't need to be initialized here, get_blkio() will do 
+ * that for you set the blkio parameters of "weight" to the specific value
  * return 0 in case of success and -1 in case of error
  */
 int set_blkio(virDomainPtr domain, int new_weight)

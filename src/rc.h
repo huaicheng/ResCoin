@@ -35,9 +35,15 @@ void print_typed_parameters(virTypedParameterPtr domain, int nparams);
 
 int set_params_value(virTypedParameterPtr params, int nparams, const char *field, int new_value);
 
-int set_schedinfo(virDomainPtr domain, int new_cpu_shares);
+int set_schedinfo(virDomainPtr domain, long long new_value);
 
-int set_cpu_shares(virDomainPtr domain, int new_cpu_shares);
+int set_cpu_shares(virDomainPtr domain, long long new_cpu_share);
+
+int set_vcpu_period(virDomainPtr domain, long long new_vcpu_period);
+
+int set_vcpu_quota(virDomainPtr domain, long long new_vcpu_quota);
+
+int set_vcpu_bw(virDomainPtr domain, long long, long long); 
 
 int set_blkio(virDomainPtr domain, int new_weight);
 
