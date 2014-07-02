@@ -14,20 +14,108 @@ void sum_load(struct mach_load *dsum, struct mach_load **ds,
     }
 }
 
-/* the way to allocate and control cpu resources, e.g. 40% CPU */
-void allocate_cpu(virDomainPtr dom, double cpu_bw_percentage)
+/* 
+ * CPU bandwidth allocation, e.g. 40% CPU, cpu_bw_percentage ~ [0 - 100%]
+ * TODO: don't support dynamically change the "period" parameter yet, it only 
+ * allocate cpu_quota according to the current period and bw_percentage
+ * TODO: think about the real situation, say we have 8 pCPUs, and the domain
+ * has 2 vCPUs. The the domain take 2 / 8 = 25% of the total physical CPU 
+ * resource at most. Does cfs.quota / cfs.period work for only ONE CPU or mean
+ * all CPUs ? If it aims at one CPU, the following function works for each vCPU
+ * of the domain, then it should never exceed its upper bound.
+ */
+int allocate_cpu(virDomainPtr domain, double cpu_bw_percentage)
 {
-    set_cpu_bw(dom, cpu_bw_percentage);
+    int ret = -1;
+    unsigned long long cpu_period;
+    long long cpu_quota = -1;
+    virNodeInfo nodeinfo;
+    virDomainInfo dominfo;
+    unsigned int nr_pcpu = 0, nr_vcpu = 0;
+
+    if (-1 == virNodeGetInfo(domain, &nodeinfo))
+        goto cleanup;
+    nr_pcpu = nodeinfo.cpus;
+
+    if (-1 == virDomainGetInfo(domain, &dominfo))
+        goto cleanup;
+    nr_vcpu = dominfo.nrVirtCpu;
+
+    if (cpu_bw_percentage <= (double)nr_vcpu / nr_pcpu) {
+
+        if (-1 == get_vcpu_period(domain, &cpu_period))
+            goto cleanup;
+
+        /* 
+         * Compute the new quota which should be allocated to the domain, the 
+         * quota is applied to each vcpu, thus the cpu_bw_percentage should be
+         * divided by nr_vcpu.
+         */
+        cpu_quota = 
+            (long long)(cpu_bw_percentage / nr_vcpu * nr_pcpu * cpu_period);
+    } else {
+        /* 
+         * allocate at most (nr_vcpu / nr_pcpu) bandwidth for the domain
+         */
+        cpu_quota = (long long)(cpu_period);
+    }
+
+    if (-1 == set_vcpu_quota(domain, cpu_quota))
+        goto cleanup;
+
+    ret = 0;
+
+cleanup:
+    return ret;
 }
 
-/* e.g. 30% memory */
-void allocate_mem(double mem_share_percentage)
+/* 
+ * runtime memory allocate for domain
+ */
+int allocate_mem(virDomainPtr domain, double mem_percentage)
 {
+    int ret = -1;
+    struct sysinfo pinfo;
+    unsigned long vmemsz;
+    virDomainInfo dominfo;
+
+    if (-1 == sysinfo(&pinfo))
+        goto cleanup;
+    vmemsz = (unsigned long)(mem_percentage * pinfo.totalram);
+
+    if (-1 == virDomainGetInfo(domain, dominfo)) 
+        goto cleanup;
+
+    /* memory size can't be too small, or OOM would kill the VM process */
+    if (vmemsz < VIR_MEM_LOW_BOUND_IN_BYTES) {
+        vmemsz = VIR_MEM_LOW_BOUND_IN_BYTES;
+    } else if (vmemsz > dominfo.maxMem) {
+    /* memory size < maxMem, for qemu, maxMem can't be changed at runtime */ 
+        fprintf(stderr, "allocate %lu memory to domain which is larger" 
+                "than the maxMem [%lu]\n", vmemsz, dominfo.maxMem);
+        goto cleanup;
+    }
+
+    /* should also set a lower memory bound for the domain */
+
+    if (-1 == virDomainSetMemory(domain, vmemsz))
+        goto cleanup;
+    
+    ret = 0;
+
+cleanup:
+    return ret;
 }
 
-/* e.g. 50% disk bandwidth */
-void allocate_disk(double disk_bw_percentage)
+/*
+ * given the disk bandwidth, disk read_bytes_sec and write_bytes_sec should be
+ * throttled respectively
+ */
+void allocate_disk(virDomainPtr domain, double disk_bw_percentage)
 {
+    /* (1). transform disk_bw_percentage to read_bytes_sec and write_bytes_sec
+     * throttling, HOW ??
+     */
 }
 
 double cal_wr(double i_load, double t_load)
@@ -41,7 +129,8 @@ double min(double a, double b)
 }
 
 /* the policy to schedule CPU resources */
-void schedule_cpu(double t_cpu_load, double cpu_cap, double *cpu_tc, double *cpu_est, int nr_vm)
+void schedule_cpu(double t_cpu_load, double cpu_cap, double *cpu_tc, 
+        double *cpu_est, int nr_vm)
 {
     int i;
     double avail = 0.0, taken = 0.0;

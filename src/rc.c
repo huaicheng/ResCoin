@@ -638,7 +638,8 @@ int set_blkio_weight(virDomainPtr domain, const char *str_weight)
  * them.
  * Return 0 in case of success and -1 in case of error
  */
-int get_memory(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
+int get_mem_params(virDomainPtr domain, virTypedParameterPtr *params, 
+        int *nparams)
 {
     int ret = -1;
 
@@ -648,16 +649,29 @@ int get_memory(virDomainPtr domain, virTypedParameterPtr *params, int *nparams)
         memset(params, 0, sizeof(**params) * (*nparams));
         if (0 != virDomainGetMemoryParameters(domain, *params, nparams, 0))
             goto cleanup;
-        return 0;
+        ret = 0;
     }
+
 cleanup:
     return ret;
 }
 
-int set_memory(virDomainPtr domain, unsigned long new_memsize)
+int set_mem_params(virDomainPtr domain, const char *field, const char *value)
 {
-    if (virDomainSetMemory(domain, new_memsize) != 0) {
-        fprintf(stderr, "Can't set VM memory to %ld\n", new_memsize);
-        exit(errno);
-    }
+    int ret = -1;
+    virTypedParametersPtr params;
+    int nparams = 0;
+
+    if (-1 == get_mem_params(domain, &params, &nparams)) 
+        goto cleanup;
+    if (-1 == set_params_value(params, nparams, field, value))
+        goto cleanup;
+    if (-1 == virDomainSetMemoryParameters(domain, params, nparams, 0))
+        goto cleanup;
+
+    ret = 0;
+
+cleanup:
+    virTypedParamsFree(params, nparams);
+    return ret;
 }
