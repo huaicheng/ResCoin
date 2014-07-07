@@ -14,12 +14,12 @@ typedef struct mach_load elemtype;
 /*
  * This is my version of ring buffer implementation
  * @buff: the buffer area used to store the data
- * @size: indicate the buffer area size
+ * @size: indicate the buffer area size, it's actually the real size plus one
  * @start: the current start position of buff where the read starts
  * @end: the current end positon of buff where the write starts
  *
- * An extra opening slot is added to distinguish the ring buffer is full or 
- * empty
+ * An extra opening slot is added to distinguish whether the ring buffer is full 
+ * or empty
  */
 struct ring_buffer 
 {
@@ -31,7 +31,7 @@ struct ring_buffer
 
 void rb_init(struct ring_buffer *rb, int size)
 {
-    rb->size = size + 1;
+    rb->size = size + 1; /* keep one extra opening slot */
     rb->start = 0;
     rb->end = 0;
     rb->buff = (elemtype *)malloc(sizeof(elemtype) * rb->size);
@@ -68,6 +68,7 @@ void rb_write(struct ring_buffer *rb, elemtype *val)
 
 /*
  * before calling rb_read, caller should ensure !rb_is_empty() first 
+ * read data from the buffer and update the start pointer
  */
 void rb_read(struct ring_buffer *rb, elemtype *val)
 {
@@ -77,12 +78,27 @@ void rb_read(struct ring_buffer *rb, elemtype *val)
 
 /*
  * read the second to last value from the buffer
- * NO changes in the start/end position
+ * NO changes with the start/end position, just read the data
  */
 void rb_read_last(struct ring_buffer *rb, elemtype *val)
 {
-    int last_val_pos = (rb->end - 1 + rb->size) % rb->size;
-    *val = rb->buff[last_val_pos];
+    int pos = (rb->end - 1 + rb->size) % rb->size;
+    *val = rb->buff[pos];
+}
+
+void rb_read_ith(struct ring_buffer *rb, elemtype *val)
+{
+    int pos;
+
+    /* 
+     * If the ring buffer is full, the data located at start position is to
+     * be removed.
+     */
+    if (rb_is_full(rb)) {
+        rb_read(rb, val);
+    }
+    else 
+        memset(val, 0, sizeof(*val));
 }
 
 #endif
