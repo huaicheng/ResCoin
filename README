@@ -3,15 +3,89 @@
  * 2014-04-01
  */
 
-DVRSF: Dynamic VirtualMachine Resource Scheduling Framework, "dvf" for short 
+ResCoin: "Resource Coin" Prototype System in pursuit of fairness and performance in virtualizd resource scheduling
 
-vm_monitor.c: program based on libvirt API to monitor the resource usage
-of VMs and host(cpu, memory, disk and network), planning to treat it as
-the main entry of the whole framework. DO remember to Reconstruct the code 
-base after some time later.
 
-rc.c/rc.h: virutal machine resource tuning functions
+Requirement:
+    * KVM 
+        - CPU: Intel VT / AMD SVM support
+        - Linux: kvm.ko / kvm_intel.ko / kvm_amd.ko loaded
+    * QEMU 
+    * Libvirt
+        - enable cgroup support
+        - network: bridged
+        - better pin vcpu to physical cpu
+    * Cgroup
+        - cpu system: CFS propotional share
+        - blkio system: CFQ throttling 
+        - memory system
+        - network system
 
-ewma.c/ewma.h: the prediction model used to predict resource workload
+Compilation && Running:
+    * make 
+        - ResCoin: the main program
+        - gmmagent: memory agent running in each VM
+    * setting up
+        - make sure each VM has network connection with the host
+        - copy gmmagent to each VM and run it first
+        - start ResCoin in the host to take effect
 
-gmmagent.c: the agent running in each VM to collect the memory usage info
+Source Tree:
+    * common.h: some string handling wrappers
+    * ringbuffer.c: simple ring buffer implementation used to store historic workload data
+    * monitor.c: resource utilization monitoring using libvirt and /proc
+    * ewma.c: the workload prediction module using EWMA 
+    * rc.c: the resource control wrappers using libvirt
+    * schedule.c: the implementation of our scheduling algorithm
+    * gmmagent.c: the memory agent running in VMs to collect their memory usage
+    * main.c: main entry of the whole system
+
+System Architecture:
+
+                              Architecture of ResCoin
+
+                                     ╔══════════════════════════════╗
+                                     ║   VM Resource Utilization    ║
+                                     ║                              ║
+                                     ║            +------------+    ║
+       ┌───────────────────┐         ║ <--libvirt-+    CPU     |<───╫─────┐
+       │                   │         ║ |          +------------+    ║     │
+       s           +-------v-------+ ║ |            +------------+  ║     │
+       c           |    monitor    <-╬-<--gmmagent--+   Memory   |<─╫─────┤      ... ...  (other VMs)
+       h           +-------+-------+ ║ |            +------------+  ║     │                    ^
+       e                   |         ║ |          +------------+    ║     │                    │
+       d                   v         ║ <--libvirt-+    Disk    |<───╫─────┤                    │
+       u           +---------------+ ║            +------------+    ║     │                    │
+       l           |   predictor   | ╚══════════════════════════════╝     │                    │
+       i           +-------+-------+                                      │                    │
+       n                   |                                              │                    │
+       g                   v                                              │                    │
+       |           +---------------+         new shares of multiple resources                  │
+       p           |   scheduler   ┼─────────────────────────────────────-+────────────────────┘
+       e           +-------+-------+         resource control using cgroup
+       r        <our fairness algorithm>
+       i                   │        
+       o                   │
+       d                   v
+       │                   │
+       │                   │
+       └───────────────────┘
+
+Scheduling Algorithm:
+ 
+/ Input: au(actual utilization), est(workload estimation), tc(template capacity)
+|
+|  initialize 〖ac〗_i←0,(i=1..n)
+|  for each period t; do
+|		〖ac〗_i (t) +=〖tc〗_i (t-1) - 〖au〗_i (t-1) - [〖tc〗_i (t-k-1)-〖au〗_i (t-k-1)]; 
+|		for each VMi in vmlist; do // do the same thing for each resource
+|			if (∑_(i=0)^n 〖est〗_i   ≤ C_h  && 〖est〗_i≤ 〖tc〗_i); then // tc satisfied
+|				allocate(〖est〗_i);
+|			else
+|				C_e= C_h-∑_(i=0)^(n-1)〖min(〖est〗_i (t-1),〖tc〗_i (t))〗
+|				〖wr〗_i=〖∥ac〗_i∥∕∑_(i=0)^n ∥〖ac〗_i 〗∥; // resource weight calibration
+| 				allocate(〖〖tc〗_i+wr〗_i∙C_e^T);  // resource allocation
+| 			end if
+| 		end for
+| 	end for
+\ Output: resource matrix
