@@ -16,6 +16,7 @@
 
 
 #define PROC_MEMINFO "/proc/meminfo"
+/* memory agent listening port */
 #define L_PORT       4588
 
 struct meminfo /* all in kB */

@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <errno.h>
 
+#include "common.h"
+
 /* 
  * Like strtol, but produce an "int" result, and check more carefully.
  * Return 0 upon success;  return -1 to indicate failure.

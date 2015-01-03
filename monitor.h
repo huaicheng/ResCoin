@@ -18,7 +18,7 @@
 #define DOMAIN_XML_SIZE 8192    /* in bytes */
 #define MAXLINE         8192
 
-#define TIME_INTERVAL   10      /* in seconds */
+#define TIME_INTERVAL   8      /* in seconds */
 #define ETHERNET        "br0"
 #define DISK            "sda"
 #define BLKNAMEMAX      64
@@ -26,12 +26,13 @@
 #define DOMNAMEMAX      64
 #define IPSZ            16
 #define ETC_HOSTS       "/etc/hosts"
-#define FORMATS         "%-6ld %-6ld %-6.2lf %-6.2lf %-6.2lf\n"
+#define FORMATS         "%-6ld %-6ld %-6.2lf %-6.2lf %-6.2lf%-6.2lf\n"
 
 extern char *hypervisor;
 extern int active_domain_num;
-extern int nr_cores;
+//extern int nrcpus;
 
+/* to implement */
 struct vm_ipaddr_name_list 
 {
     char domname[DOMNAMEMAX];   
@@ -216,8 +217,8 @@ void get_vm_workload(struct vm_statistics *vm_stat, struct vm_info *vminfo);
 void compute_vm_load(struct mach_load *vmload, 
         struct vm_statistics *vm_stat_before, 
         struct vm_statistics *vm_stat_after,
-        ull microsec, unsigned long total_mem, 
-        struct mach_load *phy_sysload);
+        ull microsec, unsigned long total_mem, unsigned int nrcpus
+        );
 
 void create_phy_rst_file(struct phy_info *phyinfo);
 

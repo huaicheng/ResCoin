@@ -1,6 +1,3 @@
-#include <libvirt/libvirt.h>
-#include <libvirt/virterror.h>
-#include <libvirt/libvirt-qemu.h>
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
@@ -18,36 +15,36 @@ void print_typed_parameters(virTypedParameterPtr params, int nparams)
     for (i = 0; i < nparams; i++) {
         switch (params[i].type) {
             case VIR_TYPED_PARAM_INT:
-                printf("%-15s : %d\n", domain[i].field, domain[i].value.i);
+                printf("%-15s : %d\n", params[i].field, params[i].value.i);
                 break;
 
             case VIR_TYPED_PARAM_UINT:
-                printf("%-15s : %u\n", domain[i].field, domain[i].value.ui);
+                printf("%-15s : %u\n", params[i].field, params[i].value.ui);
                 break;
 
             case VIR_TYPED_PARAM_LLONG:
-                printf("%-15s : %lld\n", domain[i].field, domain[i].value.l);
+                printf("%-15s : %lld\n", params[i].field, params[i].value.l);
                 break;
 
             case VIR_TYPED_PARAM_ULLONG:
-                printf("%-15s : %llu\n", domain[i].field, domain[i].value.ul);
+                printf("%-15s : %llu\n", params[i].field, params[i].value.ul);
                 break;
 
             case VIR_TYPED_PARAM_DOUBLE:
-                printf("%-15s : %lf\n", domain[i].field, domain[i].value.d);
+                printf("%-15s : %lf\n", params[i].field, params[i].value.d);
                 break;
 
             case VIR_TYPED_PARAM_BOOLEAN:
-                printf("%-15s : %d\n", domain[i].field, 
-                        domain[i].value.b ? 1 : 0);
+                printf("%-15s : %d\n", params[i].field, 
+                        params[i].value.b ? 1 : 0);
                 break;
 
             case VIR_TYPED_PARAM_STRING:
-                printf("%-15s : %s\n", domain[i].field, domain[i].value.s);
+                printf("%-15s : %s\n", params[i].field, params[i].value.s);
                 break;
 
             default:
-                printf("unimplemented parameter type [%d]", domain[i].type);
+                printf("unimplemented parameter type [%d]", params[i].type);
         }
     }
 }
@@ -75,52 +72,52 @@ int set_params_value(virTypedParameterPtr params, int nparams,
 
     switch (param->type) {
         case VIR_TYPED_PARAM_INT:
-            if (strtol_i(value, NULL, 10, param->value.i) < 0) {
+            if (strtol_i(value, NULL, 10, &param->value.i) < 0) {
                 fprintf(stderr, "Invalid value for field '%s':"
-                        "expected int", name);
+                        "expected int", param->field);
                 goto cleanup;
             }
             break;
 
         case VIR_TYPED_PARAM_UINT:
-            if (strtol_ui(value, NULL, 10, param->value.ui) < 0) {
+            if (strtol_ui(value, NULL, 10, &param->value.ui) < 0) {
                 fprintf(stderr, "Invalid value for field '%s':"
-                        "expected unsigned int", name);
+                        "expected unsigned int", param->field);
                 goto cleanup;
             }
             break;
 
         case VIR_TYPED_PARAM_LLONG:
-            if (strtol_ll(value, NULL, 10, param->value.l) < 0) {
+            if (strtol_ll(value, NULL, 10, &param->value.l) < 0) {
                 fprintf(stderr, "Invalid value for field '%s':"
-                        "expected long long int", name);
+                        "expected long long int", param->field);
                 goto cleanup;
             }
             break;
 
         case VIR_TYPED_PARAM_ULLONG:
-            if (strtol_ull(value, NULL, 10, param->value.ul) < 0) {
+            if (strtol_ull(value, NULL, 10, &param->value.ul) < 0) {
                 fprintf(stderr, "Invalid value for field '%s':"
-                        "expected unsigned long long", name);
+                        "expected unsigned long long", param->field);
                 goto cleanup;
             }
             break;
 
-        case VIR_TYPED_PARAM_DOUBLE:
+/*        case VIR_TYPED_PARAM_DOUBLE:
             if (strtod_d(value, NULL, 10, param->value.d) < 0) {
                 fprintf(stderr, "Invalid value for field '%s':"
-                        "expected double", name);
+                        "expected double", param->field);
                 goto cleanup;
             }
-            break;
+            break;   */
 
         case VIR_TYPED_PARAM_BOOLEAN:
             /* TODO: need modification here */
-            params[i].value.b = (bool)new_value;
+            params[i].value.b = (bool)value;
             break;
 
         default :
-            printf("unexpected type %d for field %s\n", type, name);
+            printf("unexpected type %d for field %s\n", param->type, param->field);
             goto cleanup;
     }
 
@@ -146,7 +143,7 @@ int get_schedinfo(virDomainPtr domain, virTypedParameterPtr *params,
     char *retc = virDomainGetSchedulerType(domain, nparams);
     if ((NULL == retc) || (0 == *nparams)) {
         fprintf(stderr, "get domain scheduler type failed...\n");
-        goto cleanup
+        goto cleanup;
     }
 
     *params = (virTypedParameterPtr)malloc(sizeof(**params) * (*nparams));
@@ -212,8 +209,8 @@ int set_cpu_shares_ull(virDomainPtr domain, unsigned long long *cpu_shares)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -239,8 +236,8 @@ int get_cpu_shares(virDomainPtr domain, unsigned long long *cpu_shares)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -264,12 +261,12 @@ int set_vcpu_period(virDomainPtr domain, const char *vcpu_period)
     return set_schedinfo(domain, VIR_DOMAIN_SCHEDULER_VCPU_PERIOD, vcpu_period);
 }
 
-int set_vcpu_period_ull(virDomainPtr domain, unsigned long long vcpu_period)
+int set_vcpu_period_ull(virDomainPtr domain, unsigned long long *vcpu_period)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -294,8 +291,8 @@ int get_vcpu_period(virDomainPtr domain, unsigned long long *vcpu_period)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -324,8 +321,8 @@ int set_vcpu_quota_ll(virDomainPtr domain, long long *vcpu_quota)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -350,8 +347,8 @@ int get_vcpu_quota(virDomainPtr domain, long long *vcpu_quota)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -375,9 +372,9 @@ int set_vcpu_bw(virDomainPtr domain, unsigned long long *vcpu_period,
 {
     int ret = -1;
 
-    if (-1 == set_vcpu_period(domain, vcpu_period))
+    if (-1 == set_vcpu_period_ull(domain, vcpu_period))
         goto cleanup;
-    if (-1 == set_vcpu_quota(domain, vcpu_quota))
+    if (-1 == set_vcpu_quota_ll(domain, vcpu_quota))
         goto cleanup;
 
     ret = 0;
@@ -441,7 +438,7 @@ cleanup:
 int set_blkio_params(virDomainPtr domain, const char *field, const char *value)
 {
     int ret = -1;
-    virTypedParametersPtr params;
+    virTypedParameterPtr params;
     int nparams = 0;
 
     if (-1 == get_blkio_params(domain, &params, &nparams)) 
@@ -458,12 +455,12 @@ cleanup:
     return ret;
 }
 
-int get_blkio_read_iops(virDomainPtr domain, const char *str_riops)
+int get_blkio_read_iops(virDomainPtr domain, char *str_riops)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -471,7 +468,7 @@ int get_blkio_read_iops(virDomainPtr domain, const char *str_riops)
         goto cleanup;
     if (param = virTypedParamsGet(params, nparams, 
                 VIR_DOMAIN_BLKIO_DEVICE_READ_IOPS)) {
-        *str_riops = param->value.s;
+        str_riops = param->value.s;
         ret = 0;
     }
 
@@ -485,12 +482,12 @@ int set_blkio_read_iops(virDomainPtr domain, const char *str_riops)
     return set_blkio_params(domain, VIR_DOMAIN_BLKIO_DEVICE_READ_IOPS, str_riops);
 }
 
-int get_blkio_write_iops(virDomainPtr domain, const char *str_wiops)
+int get_blkio_write_iops(virDomainPtr domain, char *str_wiops)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -498,7 +495,7 @@ int get_blkio_write_iops(virDomainPtr domain, const char *str_wiops)
         goto cleanup;
     if (param = virTypedParamsGet(params, nparams, 
                 VIR_DOMAIN_BLKIO_DEVICE_WRITE_IOPS)) {
-        *str_wiops = param->value.s;
+        str_wiops = param->value.s;
         ret = 0;
     }
 
@@ -509,15 +506,15 @@ cleanup:
 
 int set_blkio_write_iops(virDomainPtr domain, const char *str_wiops)
 {
-    return set_blkio_params(domain, VIR_DOMAIN_BLKIO_DEVICE_WRITE_IOPS, *str_wiops);
+    return set_blkio_params(domain, VIR_DOMAIN_BLKIO_DEVICE_WRITE_IOPS, str_wiops);
 }
 
-int get_blkio_read_bytes(virDomainPtr domain, const char *str_rbps)
+int get_blkio_read_bytes(virDomainPtr domain, char *str_rbps)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -525,7 +522,7 @@ int get_blkio_read_bytes(virDomainPtr domain, const char *str_rbps)
         goto cleanup;
     if (param = virTypedParamsGet(params, nparams, 
                 VIR_DOMAIN_BLKIO_DEVICE_READ_BPS)) {
-        *str_rbps = param->value.s;
+        str_rbps = param->value.s;
         ret = 0;
     }
 
@@ -539,12 +536,12 @@ int set_blkio_read_bytes(virDomainPtr domain, const char *str_rbps)
     return set_blkio_params(domain, VIR_DOMAIN_BLKIO_DEVICE_READ_BPS, str_rbps);
 }
 
-int get_blkio_write_bytes(virDomainPtr domain, const char *str_wbps)
+int get_blkio_write_bytes(virDomainPtr domain, char *str_wbps)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -552,7 +549,7 @@ int get_blkio_write_bytes(virDomainPtr domain, const char *str_wbps)
         goto cleanup;
     if (param = virTypedParamsGet(params, nparams, 
                 VIR_DOMAIN_BLKIO_DEVICE_WRITE_BPS)) {
-        *str_wbps = param->value.s;
+        str_wbps = param->value.s;
         ret = 0;
     }
 
@@ -566,12 +563,12 @@ int set_blkio_write_bytes(virDomainPtr domain, const char *str_wbps)
     return set_blkio_params(domain, VIR_DOMAIN_BLKIO_DEVICE_WRITE_BPS, str_wbps);
 }
 
-int get_blkio_dev_weight(virDomainPtr domain, const char *str_dev_weight)
+int get_blkio_dev_weight(virDomainPtr domain, char *str_dev_weight)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -579,7 +576,7 @@ int get_blkio_dev_weight(virDomainPtr domain, const char *str_dev_weight)
         goto cleanup;
     if (param = virTypedParamsGet(params, nparams, 
                 VIR_DOMAIN_BLKIO_DEVICE_WEIGHT)) {
-        *str_dev_weight = param->value.s;
+        str_dev_weight = param->value.s;
         ret = 0;
     }
 
@@ -602,12 +599,12 @@ int set_blkio_dev_weight(virDomainPtr domain, const char *str_dev_weight)
 /*
  * TODO: do not known weight data type, int or unsigned int
  */
-int get_blkio_weight(virDomainPtr domain, const char *str_weight)
+int get_blkio_weight(virDomainPtr domain, char *str_weight)
 {
     int i;
     int type;
-    virTypedParamsPtr params = NULL;
-    virTypedParamsPtr param = NULL;
+    virTypedParameterPtr params = NULL;
+    virTypedParameterPtr param = NULL;
     int nparams = 0;
     int ret = -1;
 
@@ -659,7 +656,7 @@ cleanup:
 int set_mem_params(virDomainPtr domain, const char *field, const char *value)
 {
     int ret = -1;
-    virTypedParametersPtr params;
+    virTypedParameterPtr params;
     int nparams = 0;
 
     if (-1 == get_mem_params(domain, &params, &nparams)) 
@@ -675,3 +672,4 @@ cleanup:
     virTypedParamsFree(params, nparams);
     return ret;
 }
+
