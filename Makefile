@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -lvirt -lm -g
+CFLAGS = -Wall -Werror -lvirt -lm -g
 
 all: ResCoin gmmagent
 

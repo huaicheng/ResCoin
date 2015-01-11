@@ -1,5 +1,5 @@
 /* 
- * Author: coperd <lhcwhu@gmail.com>
+ * Author: Coperd <lhcwhu@gmail.com>
  * 2014-04-01
  */
 
@@ -10,7 +10,7 @@ ResCoin: "Resource Coin" Prototype System in pursuit of fairness and performance
 Requirement:
     * KVM 
         - CPU: Intel VT / AMD SVM support
-        - Linux: kvm.ko / kvm_intel.ko / kvm_amd.ko loaded
+        - Linux: kvm.ko, kvm_intel.ko / kvm_amd.ko loaded
     * QEMU 
     * Libvirt
         - enable cgroup support
