@@ -1,7 +1,7 @@
 # ResCoin #
 "Resource Coin" Prototype System in pursuit of fairness and performance of virtualizd resource scheduling
 
-Author: [Coperd](http://coperd.info)  
+Author: [Coperd](http://people.cs.uchicago.edu/~huaicheng)  
 Email: <<lhcwhu@gmail.com>>   
 Date: 2014-04-01
 * * *
